@@ -5,8 +5,7 @@ use libc::c_int;
 use nix::{self, fcntl, unistd, Errno};
 use nix::sys::stat;
 use ffi::*;
-use {Result as Res, Error, Device, Event};
-use event::{self, Kind, Code};
+use {Result as Res, Error, Device};
 
 #[cfg(feature = "udev")]
 use udev;
@@ -88,6 +87,18 @@ impl Builder {
 		self
 	}
 
+	pub fn event(mut self) -> Res<Self> {
+		self.abs = None;
+		unsafe {
+			//try!(Errno::result(ui_set_evbit(self.fd, EV_KEY)));
+			//try!(Errno::result(ui_set_keybit(self.fd, KEY_H)));
+			ui_set_evbit(self.fd, &EV_KEY as *const c_int)?;
+			ui_set_keybit(self.fd, &KEY_H as *const c_int)?;
+			//try!(ui_set_keybit(self.fd, &KEY_H));
+		}
+		Ok(self)
+	}
+/*
 	/// Enable the given event.
 	pub fn event<T: Into<Event>>(mut self, value: T) -> Res<Self> {
 		self.abs = None;
@@ -229,7 +240,7 @@ impl Builder {
 			}
 		}
 	}
-
+*/
 	/// Set the maximum value for the previously enabled absolute event.
 	pub fn max(mut self, value: i32) -> Self {
 		self.def.absmax[self.abs.unwrap() as usize] = value;
@@ -261,7 +272,9 @@ impl Builder {
 			let size = mem::size_of_val(&self.def);
 
 			try!(unistd::write(self.fd, slice::from_raw_parts(ptr, size)));
-			try!(Errno::result(ui_dev_create(self.fd)));
+			//todo: try!(Errno::result(ui_dev_create(self.fd)));
+			// try1: Errno::result(ui_dev_create(self.fd)).unwrap();
+			try!(ui_dev_create(self.fd));
 		}
 
 		Ok(Device::new(self.fd))

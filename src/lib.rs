@@ -4,14 +4,7 @@ extern crate libc;
 
 extern crate uinput_sys as ffi;
 
-#[macro_use]
 extern crate nix;
-
-#[macro_use]
-extern crate custom_derive;
-
-#[macro_use]
-extern crate enum_derive;
 
 #[cfg(feature = "udev")]
 extern crate libudev as udev;
@@ -22,9 +15,6 @@ mod error;
 pub use error::Error;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
-
-pub mod event;
-pub use event::Event;
 
 pub mod device;
 pub use device::Device;

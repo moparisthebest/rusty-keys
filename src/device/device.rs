@@ -1,10 +1,9 @@
 use std::{mem, ptr, slice};
 use libc::c_int;
-use libc::{timeval, gettimeofday};
+use libc::{timeval, gettimeofday, input_event};
 use nix::unistd;
 use ffi::*;
-use {Result as Res, event};
-use event::{Kind, Code};
+use {Result as Res};
 
 /// The virtual device.
 pub struct Device {
@@ -24,7 +23,7 @@ impl Device {
 		unsafe {
 			let mut event = input_event {
 				time:  timeval { tv_sec: 0, tv_usec: 0 },
-				kind:  kind as u16,
+				type_:  kind as u16,
 				code:  code as u16,
 				value: value as i32,
 			};
@@ -46,39 +45,38 @@ impl Device {
 	}
 
 	/// Send an event.
-	pub fn send<T: Into<event::Event>>(&mut self, event: T, value: i32) -> Res<()> {
-		let event = event.into();
-		self.write(event.kind(), event.code(), value)
+	pub fn send(&mut self, kind: c_int, code: c_int, value: i32) -> Res<()> {
+		self.write(kind, code, value)
 	}
 
 	/// Send a press event.
-	pub fn press<T: event::Press>(&mut self, event: &T) -> Res<()> {
-		self.write(event.kind(), event.code(), 1)
+	pub fn press(&mut self, kind: c_int, code: c_int) -> Res<()> {
+		self.write(kind, code, 1)
 	}
 
 	/// Send a release event.
-	pub fn release<T: event::Release>(&mut self, event: &T) -> Res<()> {
-		self.write(event.kind(), event.code(), 0)
+	pub fn release(&mut self, kind: c_int, code: c_int) -> Res<()> {
+		self.write(kind, code, 0)
 	}
 
 	/// Send a press and release event.
-	pub fn click<T: event::Press + event::Release>(&mut self, event: &T) -> Res<()> {
-		try!(self.press(event));
-		try!(self.release(event));
+	pub fn click(&mut self, kind: c_int, code: c_int) -> Res<()> {
+		try!(self.press(kind, code));
+		try!(self.release(kind, code));
 
 		Ok(())
 	}
 
 	/// Send a relative or absolute positioning event.
-	pub fn position<T: event::Position>(&mut self, event: &T, value: i32) -> Res<()> {
-		self.write(event.kind(), event.code(), value)
+	pub fn position(&mut self, kind: c_int, code: c_int, value: i32) -> Res<()> {
+		self.write(kind, code, value)
 	}
 }
 
 impl Drop for Device {
 	fn drop(&mut self) {
 		unsafe {
-			ui_dev_destroy(self.fd);
+			ui_dev_destroy(self.fd).unwrap();
 		}
 	}
 }
