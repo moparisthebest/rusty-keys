@@ -28,6 +28,13 @@ impl Device {
 				value: value as i32,
 			};
 
+			self.write_event(event)
+		}
+	}
+
+	#[doc(hidden)]
+	pub fn write_event(&self, mut event: input_event) -> Res<()> {
+		unsafe {
 			gettimeofday(&mut event.time, ptr::null_mut());
 
 			let ptr  = &event as *const _ as *const u8;

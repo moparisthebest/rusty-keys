@@ -13,6 +13,7 @@ keywords    = ["linux", "input"]
 libc       = "0.2"
 nix        = "0.5"
 uinput-sys = "0.1"
+getopts    = "*"
 
 [dependencies.libudev]
 optional = true

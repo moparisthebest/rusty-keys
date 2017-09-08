@@ -6,6 +6,7 @@ use nix::{self, fcntl, unistd, Errno};
 use nix::sys::stat;
 use ffi::*;
 use {Result as Res, Error, Device};
+use std::collections::hash_map::Values;
 
 #[cfg(feature = "udev")]
 use udev;
@@ -87,13 +88,17 @@ impl Builder {
 		self
 	}
 
-	pub fn event(mut self) -> Res<Self> {
+	pub fn event(mut self, key_codes: Values<&str, *const c_int>) -> Res<Self> {
 		self.abs = None;
+		//let test_ev_key : c_int = EV_KEY as c_int;
 		unsafe {
 			//try!(Errno::result(ui_set_evbit(self.fd, EV_KEY)));
 			//try!(Errno::result(ui_set_keybit(self.fd, KEY_H)));
-			ui_set_evbit(self.fd, &EV_KEY as *const c_int)?;
-			ui_set_keybit(self.fd, &KEY_H as *const c_int)?;
+			ui_set_evbit(self.fd, EV_KEY as *const c_int)?;
+			//ui_set_keybit(self.fd, KEY_H as *const c_int)?;
+			for key_code in key_codes {
+				ui_set_keybit(self.fd, *key_code)?;
+			}
 			//try!(ui_set_keybit(self.fd, &KEY_H));
 		}
 		Ok(self)
