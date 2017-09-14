@@ -42,6 +42,10 @@ impl Config {
 
 fn main() {
 
+    let key_map_config = parse_cfg("keymap.toml").expect("provided config cannot be found/parsed");
+
+    //println!("key_map_config: {:?}", key_map_config);
+
     let key_map = KeyMap::key_map();
 
     //println!("key_map: {:?}", key_map);
@@ -52,8 +56,11 @@ fn main() {
         //.event(uinput::event::Keyboard::All).unwrap()
         .create().expect("4");
 
-    let mut key_map = KeyMap::new();
-    key_map.map(KEY_A, KEY_B);
+    let key_map = KeyMaps::new(&key_map, key_map_config);
+    //println!("keymaps: {:?}", keymaps);
+
+    //let mut key_map = KeyMap::new();
+    //key_map.map(KEY_A, KEY_B);
 
     thread::sleep(Duration::from_secs(1));
 
@@ -203,6 +210,57 @@ trait KeyMapper {
     fn send_event(&self, event: input_event, device: &Device);
 }
 
+struct KeyMaps {
+    keymaps: Vec<KeyMap>,
+}
+
+fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<u16> {
+    keymap.split(",").map(|k|
+        match key_map.get(k.trim()) {
+            Some(key_code) => *key_code as u16,
+            None => panic!("unknown key: {}", k.trim())
+        }
+    ).collect()
+}
+
+impl KeyMaps {
+    pub fn new(key_map: &HashMap<&'static str, *const c_int>, config: KeymapConfig) -> KeyMaps {
+        if config.keymaps.len() < 2 {
+            panic!("must have at least 2 keymaps (original and mapped) but only have {},", config.keymaps.len());
+        }
+        let base_keymap = parse_keymap(key_map, &config.keymaps[0]);
+        println!("base_keymap      : {:?}", base_keymap);
+        let mut keymaps = vec!(KeyMap::new());
+        for (x, v) in config.keymaps.iter().enumerate() {
+            if x == 0 {
+                continue;
+            }
+            let v = parse_keymap(key_map, v);
+            println!("config.keymaps[{}]: {:?}", x, v);
+            if v.len() != base_keymap.len() {
+                panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, v.len());
+            }
+            let mut keymap = KeyMap::new();
+            for(i, key_code) in v.iter().enumerate() {
+                keymap.map(base_keymap[i], *key_code);
+            }
+            println!("keymap[{}]: {:?}", x, &keymap.keymap[..]);
+            keymaps.push(keymap);
+        }
+        //println!("keymaps: {:?}", keymaps);
+        KeyMaps {
+            keymaps: keymaps
+        }
+    }
+}
+
+impl KeyMapper for KeyMaps {
+    fn send_event(&self, event: input_event, device: &Device) {
+        //println!("type: {} code: {}", event.type_, event.code);
+        self.keymaps[1].send_event(event, device);
+    }
+}
+
 // 249 is one more than KEY_MICMUTE which is max key in uinput-sys event.rs
 const KEY_MAX : usize = 249;
 
@@ -213,22 +271,24 @@ struct KeyMap {
 impl KeyMap {
     pub fn key_map() -> HashMap<&'static str, *const c_int> {
             [
-                ("Reserved", KEY_RESERVED),
-                ("Esc", KEY_ESC),
-                ("_1", KEY_1),
-                ("_2", KEY_2),
-                ("_3", KEY_3),
-                ("_4", KEY_4),
-                ("_5", KEY_5),
-                ("_6", KEY_6),
-                ("_7", KEY_7),
-                ("_8", KEY_8),
-                ("_9", KEY_9),
-                ("_0", KEY_10),
-                ("Minus", KEY_MINUS),
-                ("Equal", KEY_EQUAL),
-                ("BackSpace", KEY_BACKSPACE),
-                ("Tab", KEY_TAB),
+                // generated like:
+                // grep -o 'KEY_[^ :;]*' ~/.cargo/registry/src/github.com-1ecc6299db9ec823/uinput-sys-0.1.3/src/events.rs | sed 's/^KEY_//' | awk '{print "(\""$1"\", KEY_"$1"),"}'
+                ("RESERVED", KEY_RESERVED),
+                ("ESC", KEY_ESC),
+                ("1", KEY_1),
+                ("2", KEY_2),
+                ("3", KEY_3),
+                ("4", KEY_4),
+                ("5", KEY_5),
+                ("6", KEY_6),
+                ("7", KEY_7),
+                ("8", KEY_8),
+                ("9", KEY_9),
+                ("10", KEY_10),
+                ("MINUS", KEY_MINUS),
+                ("EQUAL", KEY_EQUAL),
+                ("BACKSPACE", KEY_BACKSPACE),
+                ("TAB", KEY_TAB),
                 ("Q", KEY_Q),
                 ("W", KEY_W),
                 ("E", KEY_E),
@@ -239,10 +299,10 @@ impl KeyMap {
                 ("I", KEY_I),
                 ("O", KEY_O),
                 ("P", KEY_P),
-                ("LeftBrace", KEY_LEFTBRACE),
-                ("RightBrace", KEY_RIGHTBRACE),
-                ("Enter", KEY_ENTER),
-                ("LeftControl", KEY_LEFTCTRL),
+                ("LEFTBRACE", KEY_LEFTBRACE),
+                ("RIGHTBRACE", KEY_RIGHTBRACE),
+                ("ENTER", KEY_ENTER),
+                ("LEFTCTRL", KEY_LEFTCTRL),
                 ("A", KEY_A),
                 ("S", KEY_S),
                 ("D", KEY_D),
@@ -252,11 +312,11 @@ impl KeyMap {
                 ("J", KEY_J),
                 ("K", KEY_K),
                 ("L", KEY_L),
-                ("SemiColon", KEY_SEMICOLON),
-                ("Apostrophe", KEY_APOSTROPHE),
-                ("Grave", KEY_GRAVE),
-                ("LeftShift", KEY_LEFTSHIFT),
-                ("BackSlash", KEY_BACKSLASH),
+                ("SEMICOLON", KEY_SEMICOLON),
+                ("APOSTROPHE", KEY_APOSTROPHE),
+                ("GRAVE", KEY_GRAVE),
+                ("LEFTSHIFT", KEY_LEFTSHIFT),
+                ("BACKSLASH", KEY_BACKSLASH),
                 ("Z", KEY_Z),
                 ("X", KEY_X),
                 ("C", KEY_C),
@@ -264,13 +324,14 @@ impl KeyMap {
                 ("B", KEY_B),
                 ("N", KEY_N),
                 ("M", KEY_M),
-                ("Comma", KEY_COMMA),
-                ("Dot", KEY_DOT),
-                ("Slash", KEY_SLASH),
-                ("RightShift", KEY_RIGHTSHIFT),
-                ("LeftAlt", KEY_LEFTALT),
-                ("Space", KEY_SPACE),
-                ("CapsLock", KEY_CAPSLOCK),
+                ("COMMA", KEY_COMMA),
+                ("DOT", KEY_DOT),
+                ("SLASH", KEY_SLASH),
+                ("RIGHTSHIFT", KEY_RIGHTSHIFT),
+                ("KPASTERISK", KEY_KPASTERISK),
+                ("LEFTALT", KEY_LEFTALT),
+                ("SPACE", KEY_SPACE),
+                ("CAPSLOCK", KEY_CAPSLOCK),
                 ("F1", KEY_F1),
                 ("F2", KEY_F2),
                 ("F3", KEY_F3),
@@ -281,28 +342,125 @@ impl KeyMap {
                 ("F8", KEY_F8),
                 ("F9", KEY_F9),
                 ("F10", KEY_F10),
-                ("NumLock", KEY_NUMLOCK),
-                ("ScrollLock", KEY_SCROLLLOCK),
+                ("NUMLOCK", KEY_NUMLOCK),
+                ("SCROLLLOCK", KEY_SCROLLLOCK),
+                ("KP7", KEY_KP7),
+                ("KP8", KEY_KP8),
+                ("KP9", KEY_KP9),
+                ("KPMINUS", KEY_KPMINUS),
+                ("KP4", KEY_KP4),
+                ("KP5", KEY_KP5),
+                ("KP6", KEY_KP6),
+                ("KPPLUS", KEY_KPPLUS),
+                ("KP1", KEY_KP1),
+                ("KP2", KEY_KP2),
+                ("KP3", KEY_KP3),
+                ("KP0", KEY_KP0),
+                ("KPDOT", KEY_KPDOT),
+                ("ZENKAKUHANKAKU", KEY_ZENKAKUHANKAKU),
+                ("102ND", KEY_102ND),
                 ("F11", KEY_F11),
                 ("F12", KEY_F12),
-                ("RightControl", KEY_RIGHTCTRL),
-                ("SysRq", KEY_SYSRQ),
-                ("RightAlt", KEY_RIGHTALT),
-                ("LineFeed", KEY_LINEFEED),
-                ("Home", KEY_HOME),
-                ("Up", KEY_UP),
-                ("PageUp", KEY_PAGEUP),
-                ("Left", KEY_LEFT),
-                ("Right", KEY_RIGHT),
-                ("End", KEY_END),
-                ("Down", KEY_DOWN),
-                ("PageDown", KEY_PAGEDOWN),
-                ("Insert", KEY_INSERT),
-                ("Delete", KEY_DELETE),
-                ("LeftMeta", KEY_LEFTMETA),
-                ("RightMeta", KEY_RIGHTMETA),
-                ("ScrollUp", KEY_SCROLLUP),
-                ("ScrollDown", KEY_SCROLLDOWN),
+                ("RO", KEY_RO),
+                ("KATAKANA", KEY_KATAKANA),
+                ("HIRAGANA", KEY_HIRAGANA),
+                ("HENKAN", KEY_HENKAN),
+                ("KATAKANAHIRAGANA", KEY_KATAKANAHIRAGANA),
+                ("MUHENKAN", KEY_MUHENKAN),
+                ("KPJPCOMMA", KEY_KPJPCOMMA),
+                ("KPENTER", KEY_KPENTER),
+                ("RIGHTCTRL", KEY_RIGHTCTRL),
+                ("KPSLASH", KEY_KPSLASH),
+                ("SYSRQ", KEY_SYSRQ),
+                ("RIGHTALT", KEY_RIGHTALT),
+                ("LINEFEED", KEY_LINEFEED),
+                ("HOME", KEY_HOME),
+                ("UP", KEY_UP),
+                ("PAGEUP", KEY_PAGEUP),
+                ("LEFT", KEY_LEFT),
+                ("RIGHT", KEY_RIGHT),
+                ("END", KEY_END),
+                ("DOWN", KEY_DOWN),
+                ("PAGEDOWN", KEY_PAGEDOWN),
+                ("INSERT", KEY_INSERT),
+                ("DELETE", KEY_DELETE),
+                ("MACRO", KEY_MACRO),
+                ("MUTE", KEY_MUTE),
+                ("VOLUMEDOWN", KEY_VOLUMEDOWN),
+                ("VOLUMEUP", KEY_VOLUMEUP),
+                ("POWER", KEY_POWER),
+                ("KPEQUAL", KEY_KPEQUAL),
+                ("KPPLUSMINUS", KEY_KPPLUSMINUS),
+                ("PAUSE", KEY_PAUSE),
+                ("SCALE", KEY_SCALE),
+                ("KPCOMMA", KEY_KPCOMMA),
+                ("HANGEUL", KEY_HANGEUL),
+                ("HANGUEL", KEY_HANGUEL),
+                ("HANGEUL", KEY_HANGEUL),
+                ("HANJA", KEY_HANJA),
+                ("YEN", KEY_YEN),
+                ("LEFTMETA", KEY_LEFTMETA),
+                ("RIGHTMETA", KEY_RIGHTMETA),
+                ("COMPOSE", KEY_COMPOSE),
+                ("STOP", KEY_STOP),
+                ("AGAIN", KEY_AGAIN),
+                ("PROPS", KEY_PROPS),
+                ("UNDO", KEY_UNDO),
+                ("FRONT", KEY_FRONT),
+                ("COPY", KEY_COPY),
+                ("OPEN", KEY_OPEN),
+                ("PASTE", KEY_PASTE),
+                ("FIND", KEY_FIND),
+                ("CUT", KEY_CUT),
+                ("HELP", KEY_HELP),
+                ("MENU", KEY_MENU),
+                ("CALC", KEY_CALC),
+                ("SETUP", KEY_SETUP),
+                ("SLEEP", KEY_SLEEP),
+                ("WAKEUP", KEY_WAKEUP),
+                ("FILE", KEY_FILE),
+                ("SENDFILE", KEY_SENDFILE),
+                ("DELETEFILE", KEY_DELETEFILE),
+                ("XFER", KEY_XFER),
+                ("PROG1", KEY_PROG1),
+                ("PROG2", KEY_PROG2),
+                ("WWW", KEY_WWW),
+                ("MSDOS", KEY_MSDOS),
+                ("COFFEE", KEY_COFFEE),
+                ("SCREENLOCK", KEY_SCREENLOCK),
+                ("COFFEE", KEY_COFFEE),
+                ("ROTATE_DISPLAY", KEY_ROTATE_DISPLAY),
+                ("DIRECTION", KEY_DIRECTION),
+                ("ROTATE_DISPLAY", KEY_ROTATE_DISPLAY),
+                ("CYCLEWINDOWS", KEY_CYCLEWINDOWS),
+                ("MAIL", KEY_MAIL),
+                ("BOOKMARKS", KEY_BOOKMARKS),
+                ("COMPUTER", KEY_COMPUTER),
+                ("BACK", KEY_BACK),
+                ("FORWARD", KEY_FORWARD),
+                ("CLOSECD", KEY_CLOSECD),
+                ("EJECTCD", KEY_EJECTCD),
+                ("EJECTCLOSECD", KEY_EJECTCLOSECD),
+                ("NEXTSONG", KEY_NEXTSONG),
+                ("PLAYPAUSE", KEY_PLAYPAUSE),
+                ("PREVIOUSSONG", KEY_PREVIOUSSONG),
+                ("STOPCD", KEY_STOPCD),
+                ("RECORD", KEY_RECORD),
+                ("REWIND", KEY_REWIND),
+                ("PHONE", KEY_PHONE),
+                ("ISO", KEY_ISO),
+                ("CONFIG", KEY_CONFIG),
+                ("HOMEPAGE", KEY_HOMEPAGE),
+                ("REFRESH", KEY_REFRESH),
+                ("EXIT", KEY_EXIT),
+                ("MOVE", KEY_MOVE),
+                ("EDIT", KEY_EDIT),
+                ("SCROLLUP", KEY_SCROLLUP),
+                ("SCROLLDOWN", KEY_SCROLLDOWN),
+                ("KPLEFTPAREN", KEY_KPLEFTPAREN),
+                ("KPRIGHTPAREN", KEY_KPRIGHTPAREN),
+                ("NEW", KEY_NEW),
+                ("REDO", KEY_REDO),
                 ("F13", KEY_F13),
                 ("F14", KEY_F14),
                 ("F15", KEY_F15),
@@ -315,6 +473,117 @@ impl KeyMap {
                 ("F22", KEY_F22),
                 ("F23", KEY_F23),
                 ("F24", KEY_F24),
+                ("PLAYCD", KEY_PLAYCD),
+                ("PAUSECD", KEY_PAUSECD),
+                ("PROG3", KEY_PROG3),
+                ("PROG4", KEY_PROG4),
+                ("DASHBOARD", KEY_DASHBOARD),
+                ("SUSPEND", KEY_SUSPEND),
+                ("CLOSE", KEY_CLOSE),
+                ("PLAY", KEY_PLAY),
+                ("FASTFORWARD", KEY_FASTFORWARD),
+                ("BASSBOOST", KEY_BASSBOOST),
+                ("PRINT", KEY_PRINT),
+                ("HP", KEY_HP),
+                ("CAMERA", KEY_CAMERA),
+                ("SOUND", KEY_SOUND),
+                ("QUESTION", KEY_QUESTION),
+                ("EMAIL", KEY_EMAIL),
+                ("CHAT", KEY_CHAT),
+                ("SEARCH", KEY_SEARCH),
+                ("CONNECT", KEY_CONNECT),
+                ("FINANCE", KEY_FINANCE),
+                ("SPORT", KEY_SPORT),
+                ("SHOP", KEY_SHOP),
+                ("ALTERASE", KEY_ALTERASE),
+                ("CANCEL", KEY_CANCEL),
+                ("BRIGHTNESSDOWN", KEY_BRIGHTNESSDOWN),
+                ("BRIGHTNESSUP", KEY_BRIGHTNESSUP),
+                ("MEDIA", KEY_MEDIA),
+                ("SWITCHVIDEOMODE", KEY_SWITCHVIDEOMODE),
+                ("KBDILLUMTOGGLE", KEY_KBDILLUMTOGGLE),
+                ("KBDILLUMDOWN", KEY_KBDILLUMDOWN),
+                ("KBDILLUMUP", KEY_KBDILLUMUP),
+                ("SEND", KEY_SEND),
+                ("REPLY", KEY_REPLY),
+                ("FORWARDMAIL", KEY_FORWARDMAIL),
+                ("SAVE", KEY_SAVE),
+                ("DOCUMENTS", KEY_DOCUMENTS),
+                ("BATTERY", KEY_BATTERY),
+                ("BLUETOOTH", KEY_BLUETOOTH),
+                ("WLAN", KEY_WLAN),
+                ("UWB", KEY_UWB),
+                ("UNKNOWN", KEY_UNKNOWN),
+                ("VIDEO_NEXT", KEY_VIDEO_NEXT),
+                ("VIDEO_PREV", KEY_VIDEO_PREV),
+                ("BRIGHTNESS_CYCLE", KEY_BRIGHTNESS_CYCLE),
+                ("BRIGHTNESS_AUTO", KEY_BRIGHTNESS_AUTO),
+                ("BRIGHTNESS_ZERO", KEY_BRIGHTNESS_ZERO),
+                ("BRIGHTNESS_AUTO", KEY_BRIGHTNESS_AUTO),
+                ("DISPLAY_OFF", KEY_DISPLAY_OFF),
+                ("WWAN", KEY_WWAN),
+                ("WIMAX", KEY_WIMAX),
+                ("WWAN", KEY_WWAN),
+                ("RFKILL", KEY_RFKILL),
+                ("MICMUTE", KEY_MICMUTE),
+
+                // below manual shortcuts
+                ("PSCR", KEY_SYSRQ),
+                ("SLCK", KEY_SCROLLLOCK),
+                ("BRK", KEY_PAUSE),
+                ("GRV", KEY_GRAVE),
+                ("0", KEY_10), // dumb or named wrong?
+                ("MINS", KEY_MINUS),
+                ("EQL", KEY_EQUAL),
+                ("BSPC", KEY_BACKSPACE),
+                ("LBRC", KEY_LEFTBRACE),
+                ("RBRC", KEY_RIGHTBRACE),
+                ("BSLS", KEY_BACKSLASH),
+                ("SCLN", KEY_SEMICOLON),
+                ("QUOT", KEY_APOSTROPHE),
+                ("ENT", KEY_ENTER),
+                ("COMM", KEY_COMMA),
+                ("DOT", KEY_DOT),
+                ("SLSH", KEY_SLASH),
+
+                ("CAPS", KEY_CAPSLOCK),
+                ("LSFT", KEY_LEFTSHIFT),
+                ("RSFT", KEY_RIGHTSHIFT),
+                ("SPC", KEY_SPACE),
+                ("APP", KEY_COMPOSE), // todo: is this right?
+
+                ("LCTL", KEY_LEFTCTRL),
+                ("RCTL", KEY_RIGHTCTRL),
+                ("LALT", KEY_LEFTALT),
+                ("RALT", KEY_RIGHTALT),
+                ("LGUI", KEY_LEFTMETA),
+                ("RGUI", KEY_RIGHTMETA),
+
+                ("INS", KEY_INSERT),
+                ("PGUP", KEY_PAGEUP),
+                ("PGDN", KEY_PAGEDOWN),
+                ("DEL", KEY_DELETE),
+
+                ("RGHT", KEY_RIGHT),
+
+                ("NLCK", KEY_NUMLOCK),
+                ("PSLS", KEY_KPSLASH),
+                ("PAST", KEY_KPASTERISK),
+                ("PMNS", KEY_KPMINUS),
+                ("P7", KEY_KP7),
+                ("P8", KEY_KP8),
+                ("P9", KEY_KP9),
+                ("P4", KEY_KP4),
+                ("P5", KEY_KP5),
+                ("P6", KEY_KP6),
+                ("PPLS", KEY_KPPLUS),
+                ("P1", KEY_KP1),
+                ("P2", KEY_KP2),
+                ("P3", KEY_KP3),
+                ("P0", KEY_KP0),
+                ("PDOT", KEY_KPDOT),
+                ("PENT", KEY_KPENTER),
+
             ].iter().cloned().map(|(m, v)| (m, v as *const c_int)).collect()
     }
 
@@ -329,14 +598,14 @@ impl KeyMap {
         for (x, v) in keymap.iter_mut().enumerate() {
             *v = x as u16;
         }
-        println!("keymap: {:?}", &keymap[..]);
+        //println!("keymap: {:?}", &keymap[..]);
         KeyMap {
             keymap: keymap
         }
     }
 
-    pub fn map(&mut self, from : c_int, to: c_int) {
-        self.keymap[from as usize] = to as u16;
+    pub fn map(&mut self, from : u16, to: u16) {
+        self.keymap[from as usize] = to;
     }
 }
 
@@ -344,5 +613,34 @@ impl KeyMapper for KeyMap {
     fn send_event(&self, mut event: input_event, device: &Device) {
         event.code = self.keymap[event.code as usize];
         device.write_event(event).expect("could not write event?");
+    }
+}
+
+#[macro_use]
+extern crate serde_derive;
+extern crate toml;
+
+use std::path::Path;
+
+#[derive(Deserialize, Debug)]
+struct KeymapConfig {
+    switch_layout_keys: Vec<String>,
+    revert_default_key: String,
+    revert_keymap_index: usize,
+    default_keymap_index: usize,
+    caps_lock_modify: String,
+    keymaps: Vec<String>
+}
+
+use std::io::{Error, ErrorKind};
+
+fn parse_cfg<P: AsRef<Path>>(path: P) -> Result<KeymapConfig, Error> {
+    let mut f = File::open(path)?;
+    let mut input = String::new();
+    f.read_to_string(&mut input)?;
+    //toml::from_str(&input)?
+    match toml::from_str(&input) {
+        Ok(toml) => Ok(toml),
+        Err(_) => Err(Error::new(ErrorKind::Other, "oh no!"))
     }
 }
