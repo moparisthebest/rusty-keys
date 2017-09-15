@@ -56,7 +56,7 @@ fn main() {
         //.event(uinput::event::Keyboard::All).unwrap()
         .create().expect("4");
 
-    let key_map = KeyMaps::new(&key_map, key_map_config);
+    let mut key_map = KeyMaps::new(&key_map, key_map_config);
     //println!("keymaps: {:?}", keymaps);
 
     //let mut key_map = KeyMap::new();
@@ -205,22 +205,46 @@ impl Drop for InputDevice {
 }
 
 // keymapper stuff
+// 1 is down, 0 is up
+const DOWN : i32 = 1;
+const UP : i32 = 0;
 
 trait KeyMapper {
-    fn send_event(&self, event: input_event, device: &Device);
+    fn send_event(&mut self, event: input_event, device: &Device);
+}
+
+struct LayoutSwitchKey {
+    key: u16,
+    down: bool,
+}
+
+impl LayoutSwitchKey {
+    fn set_down(&mut self, event: input_event) {
+        self.down = event.value == DOWN;
+    }
 }
 
 struct KeyMaps {
-    keymaps: Vec<KeyMap>,
+    keymaps:  Vec<KeyMap>,
+    keymap_index_keys: HashMap<u16, usize>,
+    switch_layout_keys: Vec<LayoutSwitchKey>,
+    revert_default_key: u16,
+    revert_keymap_index: usize,
+    // above do not change, below does
+    chosen_keymap_index: usize,
+    current_keymap_index: usize,
+    switch_layout_keys_pressed: bool,
+}
+
+fn parse_key(key_map: &HashMap<&'static str, *const c_int>, key: &str) -> u16 {
+    match key_map.get(key.trim()) {
+        Some(key_code) => *key_code as u16,
+        None => panic!("unknown key: {}", key.trim())
+    }
 }
 
 fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<u16> {
-    keymap.split(",").map(|k|
-        match key_map.get(k.trim()) {
-            Some(key_code) => *key_code as u16,
-            None => panic!("unknown key: {}", k.trim())
-        }
-    ).collect()
+    keymap.split(",").map(|k|parse_key(key_map, k)).collect()
 }
 
 impl KeyMaps {
@@ -228,10 +252,15 @@ impl KeyMaps {
         if config.keymaps.len() < 2 {
             panic!("must have at least 2 keymaps (original and mapped) but only have {},", config.keymaps.len());
         }
+        if config.default_keymap_index >= config.keymaps.len() || config.revert_keymap_index >= config.keymaps.len() {
+            panic!("default_keymap_index ({}) and revert_keymap_index ({}) must be less than keymaps length ({}),", config.default_keymap_index, config.revert_keymap_index, config.keymaps.len());
+        }
         let base_keymap = parse_keymap(key_map, &config.keymaps[0]);
         println!("base_keymap      : {:?}", base_keymap);
         let mut keymaps = vec!(KeyMap::new());
+        let mut keymap_index_keys: HashMap<u16, usize> = HashMap::new();
         for (x, v) in config.keymaps.iter().enumerate() {
+            keymap_index_keys.insert(*key_map.get(&*x.to_string()).unwrap() as u16, x);
             if x == 0 {
                 continue;
             }
@@ -248,16 +277,52 @@ impl KeyMaps {
             keymaps.push(keymap);
         }
         //println!("keymaps: {:?}", keymaps);
+        //println!("keymap_index_keys: {:?}", keymap_index_keys);
+
         KeyMaps {
-            keymaps: keymaps
+            keymaps: keymaps,
+            keymap_index_keys: keymap_index_keys,
+            switch_layout_keys: config.switch_layout_keys.iter().map(|k|LayoutSwitchKey { key: parse_key(key_map, k), down: false }).collect(),
+            revert_default_key: parse_key(key_map, &config.revert_default_key),
+            revert_keymap_index: config.revert_keymap_index,
+            chosen_keymap_index: config.default_keymap_index,
+            current_keymap_index: config.default_keymap_index,
+            switch_layout_keys_pressed: false,
         }
     }
 }
 
 impl KeyMapper for KeyMaps {
-    fn send_event(&self, event: input_event, device: &Device) {
-        //println!("type: {} code: {}", event.type_, event.code);
-        self.keymaps[1].send_event(event, device);
+    fn send_event(&mut self, event: input_event, device: &Device) {
+        //println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
+        if event.value != 2 {
+            let mut switch_layout_keys_pressed = true;
+            for mut layout_switch_key in self.switch_layout_keys.iter_mut() {
+                if event.code == layout_switch_key.key {
+                    layout_switch_key.set_down(event);
+                }
+                switch_layout_keys_pressed &= layout_switch_key.down;
+            }
+            self.switch_layout_keys_pressed = switch_layout_keys_pressed;
+            //println!("switch_layout_keys_pressed: {}", self.switch_layout_keys_pressed);
+            if self.switch_layout_keys_pressed {
+                let new_index = self.keymap_index_keys.get(&event.code);
+                if new_index.is_some() {
+                    self.chosen_keymap_index = *new_index.unwrap();
+                    self.current_keymap_index = self.chosen_keymap_index; // todo: what if revert_default_key is held? for now ignore
+                    return; // we don't want to also send this keypress, so bail
+                }
+            }
+            if event.code == self.revert_default_key {
+                match event.value {
+                    // todo: ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released... fix that...
+                    1 => self.current_keymap_index = self.revert_keymap_index,
+                    0 => self.current_keymap_index = self.chosen_keymap_index,
+                    _ => () // do nothing for 2
+                }
+            }
+        }
+        self.keymaps[self.current_keymap_index].send_event(event, device);
     }
 }
 
@@ -610,7 +675,7 @@ impl KeyMap {
 }
 
 impl KeyMapper for KeyMap {
-    fn send_event(&self, mut event: input_event, device: &Device) {
+    fn send_event(&mut self, mut event: input_event, device: &Device) {
         event.code = self.keymap[event.code as usize];
         device.write_event(event).expect("could not write event?");
     }

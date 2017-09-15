@@ -10,7 +10,7 @@ revert_keymap_index = 0
 
 # this is the default index to use when the program first starts
 # in this case, 2 means modified Progammer Dvorak
-default_keymap_index = 2
+default_keymap_index = 1
 
 # these are keys that caps_lock doesn't modify by default, but that you would like it to, affects all keymaps
 caps_lock_modify = """
