@@ -225,7 +225,7 @@ impl LayoutSwitchKey {
 }
 
 struct KeyMaps {
-    keymaps:  Vec<KeyMap>,
+    keymaps:  Vec<Box<KeyMapper>>,
     keymap_index_keys: HashMap<u16, usize>,
     switch_layout_keys: Vec<LayoutSwitchKey>,
     revert_default_key: u16,
@@ -257,7 +257,7 @@ impl KeyMaps {
         }
         let base_keymap = parse_keymap(key_map, &config.keymaps[0]);
         println!("base_keymap      : {:?}", base_keymap);
-        let mut keymaps = vec!(KeyMap::new());
+        let mut keymaps : Vec<Box<KeyMapper>>= vec!(Box::new(NOOP)); // todo: can we share the box?
         let mut keymap_index_keys: HashMap<u16, usize> = HashMap::new();
         for (x, v) in config.keymaps.iter().enumerate() {
             keymap_index_keys.insert(*key_map.get(&*x.to_string()).unwrap() as u16, x);
@@ -274,7 +274,7 @@ impl KeyMaps {
                 keymap.map(base_keymap[i], *key_code);
             }
             println!("keymap[{}]: {:?}", x, &keymap.keymap[..]);
-            keymaps.push(keymap);
+            keymaps.push(Box::new(keymap));
         }
         //println!("keymaps: {:?}", keymaps);
         //println!("keymap_index_keys: {:?}", keymap_index_keys);
@@ -615,7 +615,7 @@ impl KeyMap {
                 ("LSFT", KEY_LEFTSHIFT),
                 ("RSFT", KEY_RIGHTSHIFT),
                 ("SPC", KEY_SPACE),
-                ("APP", KEY_COMPOSE), // todo: is this right?
+                ("APP", KEY_COMPOSE),
 
                 ("LCTL", KEY_LEFTCTRL),
                 ("RCTL", KEY_RIGHTCTRL),
@@ -677,6 +677,15 @@ impl KeyMap {
 impl KeyMapper for KeyMap {
     fn send_event(&mut self, mut event: input_event, device: &Device) {
         event.code = self.keymap[event.code as usize];
+        device.write_event(event).expect("could not write event?");
+    }
+}
+
+const NOOP : Noop = Noop{};
+// nightly I hear... const BOX_NOOP : Box<KeyMapper> = Box::new(NOOP);
+struct Noop {}
+impl KeyMapper for Noop {
+    fn send_event(&mut self, mut event: input_event, device: &Device) {
         device.write_event(event).expect("could not write event?");
     }
 }
