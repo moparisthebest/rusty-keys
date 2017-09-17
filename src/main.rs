@@ -210,30 +210,19 @@ const DOWN : i32 = 1;
 const UP : i32 = 0;
 
 trait KeyMapper {
-    fn send_event(&mut self, event: input_event, device: &Device);
-}
-
-struct LayoutSwitchKey {
-    key: u16,
-    down: bool,
-}
-
-impl LayoutSwitchKey {
-    fn set_down(&mut self, event: input_event) {
-        self.down = event.value == DOWN;
-    }
+    fn send_event(&mut self, key_state: &mut [bool], event: input_event, device: &Device);
 }
 
 struct KeyMaps {
     keymaps:  Vec<Box<KeyMapper>>,
     keymap_index_keys: HashMap<u16, usize>,
-    switch_layout_keys: Vec<LayoutSwitchKey>,
+    switch_layout_keys: Vec<usize>,
+    key_state: [bool; KEY_MAX],
     revert_default_key: u16,
     revert_keymap_index: usize,
     // above do not change, below does
     chosen_keymap_index: usize,
     current_keymap_index: usize,
-    switch_layout_keys_pressed: bool,
 }
 
 fn parse_key(key_map: &HashMap<&'static str, *const c_int>, key: &str) -> u16 {
@@ -264,17 +253,22 @@ impl KeyMaps {
             if x == 0 {
                 continue;
             }
-            let v = parse_keymap(key_map, v);
-            println!("config.keymaps[{}]: {:?}", x, v);
-            if v.len() != base_keymap.len() {
-                panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, v.len());
+            if v.contains(":") {
+
+            } else {
+                let v = parse_keymap(key_map, v);
+                println!("config.keymaps[{}]: {:?}", x, v);
+                if v.len() != base_keymap.len() {
+                    panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, v.len());
+                }
+                let mut keymap = KeyMap::new();
+                for(i, key_code) in v.iter().enumerate() {
+                    keymap.map(base_keymap[i], *key_code);
+                }
+                println!("keymap[{}]: {:?}", x, &keymap.keymap[..]);
+                keymaps.push(Box::new(keymap));
+
             }
-            let mut keymap = KeyMap::new();
-            for(i, key_code) in v.iter().enumerate() {
-                keymap.map(base_keymap[i], *key_code);
-            }
-            println!("keymap[{}]: {:?}", x, &keymap.keymap[..]);
-            keymaps.push(Box::new(keymap));
         }
         //println!("keymaps: {:?}", keymaps);
         //println!("keymap_index_keys: {:?}", keymap_index_keys);
@@ -282,30 +276,32 @@ impl KeyMaps {
         KeyMaps {
             keymaps: keymaps,
             keymap_index_keys: keymap_index_keys,
-            switch_layout_keys: config.switch_layout_keys.iter().map(|k|LayoutSwitchKey { key: parse_key(key_map, k), down: false }).collect(),
+            switch_layout_keys: config.switch_layout_keys.iter().map(|k|parse_key(key_map, k) as usize).collect(),
+            key_state: [false; KEY_MAX], // todo: detect key state? at least CAPSLOCK...
             revert_default_key: parse_key(key_map, &config.revert_default_key),
             revert_keymap_index: config.revert_keymap_index,
             chosen_keymap_index: config.default_keymap_index,
             current_keymap_index: config.default_keymap_index,
-            switch_layout_keys_pressed: false,
         }
     }
 }
 
-impl KeyMapper for KeyMaps {
+//impl KeyMapper for KeyMaps {
+impl KeyMaps {
     fn send_event(&mut self, event: input_event, device: &Device) {
-        //println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
+        println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
         if event.value != 2 {
+            // todo: index check here...
+            self.key_state[event.code as usize] = event.value == DOWN;
             let mut switch_layout_keys_pressed = true;
             for mut layout_switch_key in self.switch_layout_keys.iter_mut() {
-                if event.code == layout_switch_key.key {
-                    layout_switch_key.set_down(event);
+                if !self.key_state[*layout_switch_key] {
+                    switch_layout_keys_pressed = false;
+                    break;
                 }
-                switch_layout_keys_pressed &= layout_switch_key.down;
             }
-            self.switch_layout_keys_pressed = switch_layout_keys_pressed;
             //println!("switch_layout_keys_pressed: {}", self.switch_layout_keys_pressed);
-            if self.switch_layout_keys_pressed {
+            if switch_layout_keys_pressed {
                 let new_index = self.keymap_index_keys.get(&event.code);
                 if new_index.is_some() {
                     self.chosen_keymap_index = *new_index.unwrap();
@@ -322,7 +318,7 @@ impl KeyMapper for KeyMaps {
                 }
             }
         }
-        self.keymaps[self.current_keymap_index].send_event(event, device);
+        self.keymaps[self.current_keymap_index].send_event(&mut self.key_state, event, device);
     }
 }
 
@@ -675,8 +671,16 @@ impl KeyMap {
 }
 
 impl KeyMapper for KeyMap {
-    fn send_event(&mut self, mut event: input_event, device: &Device) {
-        event.code = self.keymap[event.code as usize];
+    fn send_event(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device) {
+        self.keymap[event.code as usize].send_event(key_state, event, device);
+        //event.code = self.keymap[event.code as usize];
+        //device.write_event(event).expect("could not write event?");
+    }
+}
+
+impl KeyMapper for u16 {
+    fn send_event(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device) {
+        event.code = *self;
         device.write_event(event).expect("could not write event?");
     }
 }
@@ -685,8 +689,52 @@ const NOOP : Noop = Noop{};
 // nightly I hear... const BOX_NOOP : Box<KeyMapper> = Box::new(NOOP);
 struct Noop {}
 impl KeyMapper for Noop {
-    fn send_event(&mut self, mut event: input_event, device: &Device) {
-        device.write_event(event).expect("could not write event?");
+    fn send_event(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device) {
+        //device.write_event(event).expect("could not write event?");
+        // todo: kind of sucks how bout we don't
+        let mut code = event.code;
+        code.send_event(key_state, event, device);
+    }
+}
+/*
+impl InvertedKey for Noop {
+    fn send_event_inverted(mut self, mut event: input_event, device: &Device, shift_down: bool) {
+        self.send_event(event, device);
+    }
+}
+*/
+
+trait InvertedKey {
+    fn send_event_inverted(self, mut event: input_event, device: &Device, shift_down: bool);
+}
+
+struct HalfInvertedKey {
+    code: u16, // code this is describing
+    invert_shift: bool, // true to invert shift for this code
+    capslock_nomodify: bool, // true means capslock does not normally modify this, but you would like it to
+}
+
+impl InvertedKey for HalfInvertedKey {
+    fn send_event_inverted(mut self, mut event: input_event, device: &Device, shift_down: bool) {
+        // todo: shift and unshift
+        //self.code.send_event(event, device);
+    }
+}
+
+struct ShiftInvertedKey {
+    noshift_half: HalfInvertedKey,
+    shift_half: HalfInvertedKey,
+}
+
+impl InvertedKey for ShiftInvertedKey {
+    fn send_event_inverted(self, mut event: input_event, device: &Device, shift_down: bool) {
+        // returns new_code, invert_shift
+        let half_key = if shift_down {
+            self.shift_half
+        } else{
+            self.noshift_half
+        };
+        half_key.send_event_inverted(event, device, shift_down)
     }
 }
 
