@@ -47,10 +47,10 @@ keymaps = [
     # https://www.moparisthebest.com/kbs/programmer-dvorak-NoSecondary-NumpadStandard-NoSwap-StandardNums-SwapAt-SwapPipe.svg
     """
     ESC,      F1,    F2,     F3,      F4,      F5,   F6,    F7,   F8,   F9,     F10,    F11,   F12,                 PSCR,SLCK,BRK,
-    ^4:^GRV,  ^7:1,  LBRC:2, ^LBRC:3, ^RBRC:4, ^9:5, ^2:6,  ^8:7, ^0:8, ^EQL:9, RBRC:0, ^1:^5, ^3:GRV, BSPC,        INS, HOME,PGUP,    NLCK,   PSLS:^9, PAST:^0,   PMNS:^4,
-    TAB,      QUOT,  COMM,   DOT,     P,       Y,    F,     G,    C,    R,      L,      SLSH,  EQL:^6, *^BSLS:*BSLS,  DEL, END, PGDN,    P7:^A,  P8:^B,   P9:^C,
-    CAPS,     A,     O,      E,       U,       I,    D,     H,    T,    N,      S,      MINS,          ENT,                            P4:^D,  P5:^E,   P6:^F,     PPLS:COMM,
-    LSFT,     SCLN,  Q,      J,       K,       X,    B,     M,    W,    V,      Z,                     RSFT,             UP,           P1:EQL, P2:X,    P3:^SCLN,
-    LCTL,     LGUI,  LALT,                     SPC,                             RALT,   RGUI,  APP,    RCTL,        LEFT,DOWN,RGHT,    P0:BSLS,         PDOT:SCLN, PENT
+    *^4:*^GRV,  *^7:*1,  *LBRC:*2, *^LBRC:*3, *^RBRC:*4, *^9:*5, *^2:*6,  *^8:*7, *^0:*8, *^EQL:*9, *RBRC:*0, *^1:*^5, *^3:*GRV, BSPC,        INS, HOME,PGUP,    NLCK,   *PSLS:*^9, *PAST:*^0,   *PMNS:*^4,
+    TAB,      *QUOT,  *COMM,   *DOT,     P,       Y,    F,     G,    C,    R,      L,      *SLSH,  *EQL:*^6, *^BSLS,  DEL, END, PGDN,    *P7:^A,  *P8:^B,   *P9:^C,
+    CAPS,     A,     O,      E,       U,       I,    D,     H,    T,    N,      S,      *MINS,          ENT,                            *P4:^D,  *P5:^E,   *P6:^F,     *PPLS:*COMM,
+    LSFT,     *SCLN,  Q,      J,       K,       X,    B,     M,    W,    V,      Z,                     RSFT,             UP,           *P1:*EQL, *P2:X,    *P3:*^SCLN,
+    LCTL,     LGUI,  LALT,                     SPC,                             RALT,   RGUI,  APP,    RCTL,        LEFT,DOWN,RGHT,    *P0:*BSLS,         *PDOT:*SCLN, PENT
     """,
     ]

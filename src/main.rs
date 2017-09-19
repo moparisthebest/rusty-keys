@@ -759,6 +759,7 @@ impl KeyMapper for Noop {
     }
 }
 
+// todo:capslock_nomodify is like a whole-key thing, not a half-key thing, split code/invert_shift to own struct, send into send_key from *InvertedKey, maybe anyway, consider it, maybe 1 char for whole key and another for half?
 struct HalfInvertedKey {
     code: u16,
     // code this is describing
