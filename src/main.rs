@@ -208,6 +208,17 @@ impl Drop for InputDevice {
 // 1 is down, 0 is up
 const DOWN : i32 = 1;
 const UP : i32 = 0;
+const INVERT_KEY_FLAG : char = '^';
+const CAPS_MODIFY_KEY_FLAG : char = '*';
+const HALF_KEY_SEPARATOR: char = ':';
+
+const LEFTSHIFT_INDEX : usize = KEY_LEFTSHIFT as usize;
+const RIGHTSHIFT_INDEX : usize = KEY_RIGHTSHIFT as usize;
+const CAPSLOCK_INDEX : usize = KEY_CAPSLOCK as usize;
+
+const KEY_LEFTSHIFT_U16 : u16 = KEY_LEFTSHIFT as u16;
+const KEY_RIGHTSHIFT_U16 : u16 = KEY_RIGHTSHIFT as u16;
+const KEY_CAPSLOCK_U16 : u16 = KEY_CAPSLOCK as u16;
 
 trait KeyMapper {
     fn send_event(&mut self, key_state: &mut [bool], event: input_event, device: &Device);
@@ -226,14 +237,26 @@ struct KeyMaps {
 }
 
 fn parse_key(key_map: &HashMap<&'static str, *const c_int>, key: &str) -> u16 {
-    match key_map.get(key.trim()) {
+    match key_map.get(key.trim_matches(|c : char| c.is_whitespace() || c == INVERT_KEY_FLAG || c == CAPS_MODIFY_KEY_FLAG)) {
         Some(key_code) => *key_code as u16,
         None => panic!("unknown key: {}", key.trim())
     }
 }
 
-fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<u16> {
+fn parse_keymap_numeric(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<u16> {
     keymap.split(",").map(|k|parse_key(key_map, k)).collect()
+}
+
+fn parse_key_half_inverted(key_map: &HashMap<&'static str, *const c_int>, key: &str) -> HalfInvertedKey {
+    HalfInvertedKey {
+        code: parse_key(key_map, key),
+        invert_shift: key.contains(INVERT_KEY_FLAG),
+        capslock_nomodify: key.contains(CAPS_MODIFY_KEY_FLAG),
+    }
+}
+
+fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<Box<KeyMapper + 'static>> {
+    keymap.split(",").map(|k|Box::new(parse_key(key_map, k)) as Box<KeyMapper>).collect()
 }
 
 impl KeyMaps {
@@ -244,7 +267,7 @@ impl KeyMaps {
         if config.default_keymap_index >= config.keymaps.len() || config.revert_keymap_index >= config.keymaps.len() {
             panic!("default_keymap_index ({}) and revert_keymap_index ({}) must be less than keymaps length ({}),", config.default_keymap_index, config.revert_keymap_index, config.keymaps.len());
         }
-        let base_keymap = parse_keymap(key_map, &config.keymaps[0]);
+        let base_keymap = parse_keymap_numeric(key_map, &config.keymaps[0]);
         println!("base_keymap      : {:?}", base_keymap);
         let mut keymaps : Vec<Box<KeyMapper>>= vec!(Box::new(NOOP)); // todo: can we share the box?
         let mut keymap_index_keys: HashMap<u16, usize> = HashMap::new();
@@ -253,22 +276,55 @@ impl KeyMaps {
             if x == 0 {
                 continue;
             }
-            if v.contains(":") {
+                let v = v.split(",").map(|k| {
 
-            } else {
-                let v = parse_keymap(key_map, v);
-                println!("config.keymaps[{}]: {:?}", x, v);
+                    let ret : Box<KeyMapper> = if k.contains(HALF_KEY_SEPARATOR) {
+                        let keys : Vec<&str> = k.split(HALF_KEY_SEPARATOR).collect();
+                        if keys.len() != 2 {
+                            panic!("split key can only have 2 keys, 1 :, has {} keys", keys.len());
+                        }
+                        let mut shift_half = parse_key_half_inverted(key_map, keys[1]);
+                        shift_half.invert_shift = !shift_half.invert_shift;
+                        Box::new(ShiftInvertedKey {
+                            noshift_half: parse_key_half_inverted(key_map, keys[0]),
+                            shift_half: shift_half,
+                        })
+                    } else if k.contains(INVERT_KEY_FLAG) || k.contains(CAPS_MODIFY_KEY_FLAG) {
+                        Box::new(parse_key_half_inverted(key_map, k))
+                    } else {
+                        Box::new(parse_key(key_map, k))
+                    };
+                    ret
+                });//parse_keymap(key_map, v);
+                //println!("config.keymaps[{}]: {:?}", x, v);
+            /*
                 if v.len() != base_keymap.len() {
                     panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, v.len());
                 }
+                */
                 let mut keymap = KeyMap::new();
+            /*
                 for(i, key_code) in v.iter().enumerate() {
-                    keymap.map(base_keymap[i], *key_code);
+                    let ptr = Box::into_raw(*key_code);
+                    //keymap.map(base_keymap[i], &key_code);
                 }
-                println!("keymap[{}]: {:?}", x, &keymap.keymap[..]);
-                keymaps.push(Box::new(keymap));
 
+            for(i, key_code) in base_keymap.iter().enumerate() {
+                //let ptr = Box::into_raw(*key_code);
+                keymap.map(*key_code, v[i]);
             }
+            */
+            let mut i : usize = 0;
+            for key_code in v {
+                keymap.map(base_keymap[i], key_code);
+                i = i + 1;
+                if i > base_keymap.len() {
+                    panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, i);
+                }
+            }
+
+                //println!("keymap[{}]: {:?}", x, &keymap.keymap[..]);
+                keymaps.push(Box::new(keymap));
         }
         //println!("keymaps: {:?}", keymaps);
         //println!("keymap_index_keys: {:?}", keymap_index_keys);
@@ -289,10 +345,16 @@ impl KeyMaps {
 //impl KeyMapper for KeyMaps {
 impl KeyMaps {
     fn send_event(&mut self, event: input_event, device: &Device) {
-        println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
+        //println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
         if event.value != 2 {
             // todo: index check here...
-            self.key_state[event.code as usize] = event.value == DOWN;
+            if event.code == KEY_CAPSLOCK_U16 {
+                if event.value == DOWN {
+                    self.key_state[CAPSLOCK_INDEX] = !self.key_state[CAPSLOCK_INDEX];
+                }
+            } else {
+                self.key_state[event.code as usize] = event.value == DOWN;
+            }
             let mut switch_layout_keys_pressed = true;
             for mut layout_switch_key in self.switch_layout_keys.iter_mut() {
                 if !self.key_state[*layout_switch_key] {
@@ -312,8 +374,8 @@ impl KeyMaps {
             if event.code == self.revert_default_key {
                 match event.value {
                     // todo: ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released... fix that...
-                    1 => self.current_keymap_index = self.revert_keymap_index,
-                    0 => self.current_keymap_index = self.chosen_keymap_index,
+                    DOWN => self.current_keymap_index = self.revert_keymap_index,
+                    UP => self.current_keymap_index = self.chosen_keymap_index,
                     _ => () // do nothing for 2
                 }
             }
@@ -326,7 +388,7 @@ impl KeyMaps {
 const KEY_MAX : usize = 249;
 
 struct KeyMap {
-    keymap: [u16; KEY_MAX],
+    keymap: Vec<Box<KeyMapper>>,//[Box<KeyMapper>; KEY_MAX],
 }
 
 impl KeyMap {
@@ -649,23 +711,33 @@ impl KeyMap {
     }
 
     pub fn new() -> Self {
-        let mut keymap = [0u16; KEY_MAX];
+        //let mut keymap = [0u16; KEY_MAX];
+        //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(NOOP); KEY_MAX];
+        //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(0u16); KEY_MAX];
+        let mut keymap : Vec<Box<KeyMapper>> = Vec::with_capacity(KEY_MAX);
+        for x  in 0..KEY_MAX {
+            keymap.push(Box::new(NOOP));
+        }
         // which is rustier
         /*
         for x  in 0..KEY_MAX {
             keymap[x as usize] = x as u16;
         }
-        */
         for (x, v) in keymap.iter_mut().enumerate() {
             *v = x as u16;
         }
+        */
         //println!("keymap: {:?}", &keymap[..]);
         KeyMap {
             keymap: keymap
         }
     }
-
+/*
     pub fn map(&mut self, from : u16, to: u16) {
+        self.keymap[from as usize] = to;
+    }
+*/
+    pub fn map(&mut self, from : u16, to: Box<KeyMapper>) {
         self.keymap[from as usize] = to;
     }
 }
@@ -690,22 +762,8 @@ const NOOP : Noop = Noop{};
 struct Noop {}
 impl KeyMapper for Noop {
     fn send_event(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device) {
-        //device.write_event(event).expect("could not write event?");
-        // todo: kind of sucks how bout we don't
-        let mut code = event.code;
-        code.send_event(key_state, event, device);
+        device.write_event(event).expect("could not write event?");
     }
-}
-/*
-impl InvertedKey for Noop {
-    fn send_event_inverted(mut self, mut event: input_event, device: &Device, shift_down: bool) {
-        self.send_event(event, device);
-    }
-}
-*/
-
-trait InvertedKey {
-    fn send_event_inverted(self, mut event: input_event, device: &Device, shift_down: bool);
 }
 
 struct HalfInvertedKey {
@@ -714,10 +772,64 @@ struct HalfInvertedKey {
     capslock_nomodify: bool, // true means capslock does not normally modify this, but you would like it to
 }
 
-impl InvertedKey for HalfInvertedKey {
-    fn send_event_inverted(mut self, mut event: input_event, device: &Device, shift_down: bool) {
-        // todo: shift and unshift
-        //self.code.send_event(event, device);
+impl HalfInvertedKey {
+    fn send_key(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device, left_shift: bool, right_shift: bool, caps_lock: bool) {
+        let mut code = self.code;
+        let value = event.value;
+        let mut invert_shift = self.invert_shift;
+        if value == DOWN {
+            if caps_lock && self.capslock_nomodify {
+                invert_shift = !invert_shift;
+            }
+            if invert_shift {
+                if left_shift {
+                    event.code = KEY_LEFTSHIFT_U16;
+                    event.value = UP;
+                } else if right_shift {
+                    event.code = KEY_RIGHTSHIFT_U16;
+                    event.value = UP;
+                } else {
+                    event.code = KEY_LEFTSHIFT_U16;
+                    event.value = DOWN;
+                }
+                //event.code.send_event(key_state, event, device);
+                device.write_event(event).expect("could not write event?");
+                event.code = code; // not needed since u16 does it
+                event.value = value;
+            }
+        }
+        code.send_event(key_state,event, device);
+        if value == UP {
+            if caps_lock && self.capslock_nomodify {
+                invert_shift = !invert_shift;
+            }
+            if invert_shift {
+                if left_shift {
+                    event.code = KEY_LEFTSHIFT_U16;
+                    event.value = DOWN;
+                } else if right_shift {
+                    event.code = KEY_RIGHTSHIFT_U16;
+                    event.value = DOWN;
+                } else {
+                    event.code = KEY_LEFTSHIFT_U16;
+                    event.value = UP;
+                }
+                //event.code.send_event(key_state, event, device);
+                device.write_event(event).expect("could not write event?");
+                // neither of these are needed now...
+                event.code = code; // not needed since u16 does it
+                event.value = value;
+            }
+        }
+    }
+}
+
+impl KeyMapper for HalfInvertedKey {
+    fn send_event(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device) {
+        let left_shift = key_state[LEFTSHIFT_INDEX];
+        let right_shift = key_state[RIGHTSHIFT_INDEX];
+        let caps_lock = key_state[CAPSLOCK_INDEX];
+        self.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
     }
 }
 
@@ -726,15 +838,16 @@ struct ShiftInvertedKey {
     shift_half: HalfInvertedKey,
 }
 
-impl InvertedKey for ShiftInvertedKey {
-    fn send_event_inverted(self, mut event: input_event, device: &Device, shift_down: bool) {
-        // returns new_code, invert_shift
-        let half_key = if shift_down {
-            self.shift_half
+impl KeyMapper for ShiftInvertedKey {
+    fn send_event(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device) {
+        let left_shift = key_state[LEFTSHIFT_INDEX];
+        let right_shift = key_state[RIGHTSHIFT_INDEX];
+        let caps_lock = key_state[CAPSLOCK_INDEX];
+        if caps_lock != (left_shift || right_shift) {
+            self.shift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
         } else{
-            self.noshift_half
-        };
-        half_key.send_event_inverted(event, device, shift_down)
+            self.noshift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
+        }
     }
 }
 
@@ -753,6 +866,14 @@ struct KeymapConfig {
     caps_lock_modify: String,
     keymaps: Vec<String>
 }
+
+/*
+‎c`p‎: no, ? converts the error with From<> in its expansion
+‎c`p‎: so unless io::Error: From<toml::Error> it isnt going to work
+c`p‎: the idea with your own error type is that MyError: From<io::Error> + From<toml::Error> + etc etc
+‎c`p‎: ie enum MyError { Io(io::Error), Toml(toml::Error), ... }
+c`p‎: error-chain does all this stuff for you
+*/
 
 use std::io::{Error, ErrorKind};
 
