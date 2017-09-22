@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+
 # pressing all of these keys along with a number key representing the index of keymaps changes the layout
 # ie, in this case pressing both and 0 would go QWERTY, while both and 1 would go dvorak
 switch_layout_keys = ['LEFTSHIFT','RIGHTSHIFT']
@@ -9,17 +9,8 @@ revert_default_key = 'LEFTCTRL'
 revert_keymap_index = 0
 
 # this is the default index to use when the program first starts
-# in this case, 2 means modified Progammer Dvorak
+# in this case, 2 means Unix Programmer Dvorak
 default_keymap_index = 2
-
-# these are keys that caps_lock doesn't modify by default, but that you would like it to, affects all keymaps
-caps_lock_modify = """
-    GRV, 1,   2,   3,   4,   5,   6,   7,   8,   9,   0,   MINS,EQL, BSPC,                             PSLS,PAST,PMNS,
-                                                           LBRC,RBRC,BSLS,                        P7,  P8,  P9,
-                                                      SCLN,QUOT,                                  P4,  P5,  P6,  PPLS,
-                                            COMM,DOT, SLSH,                                       P1,  P2,  P3,
-                                                                                                  P0,       PDOT
-    """
 
 # these are the keymaps available, you can add as many as you want or re-order them, just be aware the mapping is
 # always done from the first one to all subsequent ones, so you probably want to leave QWERTY or similar up top
@@ -43,7 +34,7 @@ keymaps = [
     LSFT,SCLN,Q,   J,   K,   X,   B,   M,   W,   V,   Z,             RSFT,          UP,           P1,  P2,  P3,
     LCTL,LGUI,LALT,          SPC,                     RALT,RGUI,APP, RCTL,     LEFT,DOWN,RGHT,    P0,       PDOT,PENT
     """,
-    # Unix Dvorak Programmer Dvorak - for unix developers who are switching from dvorak
+    # Unix Programmer Dvorak - for unix developers who are switching from dvorak
     # https://www.moparisthebest.com/kbs/programmer-dvorak-NoSecondary-NumpadStandard-NoSwap-StandardNums-SwapAt-SwapPipe.svg
     """
     ESC,      F1,    F2,     F3,      F4,      F5,   F6,    F7,   F8,   F9,     F10,    F11,   F12,                 PSCR,SLCK,BRK,

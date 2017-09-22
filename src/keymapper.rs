@@ -79,7 +79,7 @@ impl KeyMaps {
             panic!("default_keymap_index ({}) and revert_keymap_index ({}) must be less than keymaps length ({}),", config.default_keymap_index, config.revert_keymap_index, config.keymaps.len());
         }
         let base_keymap = parse_keymap_numeric(key_map, &config.keymaps[0]);
-        println!("base_keymap      : {:?}", base_keymap);
+        //println!("base_keymap      : {:?}", base_keymap);
         let mut keymaps: Vec<Box<KeyMapper>> = vec!(Box::new(NOOP)); // todo: can we share the box?
         let mut keymap_index_keys: HashMap<u16, usize> = HashMap::new();
         for (x, v) in config.keymaps.iter().enumerate() {
@@ -363,7 +363,6 @@ pub struct KeymapConfig {
     revert_default_key: String,
     revert_keymap_index: usize,
     default_keymap_index: usize,
-    caps_lock_modify: String,
     keymaps: Vec<String>
 }
 

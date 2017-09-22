@@ -1,39 +1,54 @@
-uinput
+rusty-keys
 ======
-`/dev/uinput` high level wrapper.
+uinput level keyboard mapper for linux, with advanced caps lock and shift swapping behavior
 
-Example
--------
-The following example writes `hello world`.
+This is the only keymapper I am aware of capable of implementing this layout:  
+![Unix Programmer's Dvorak](https://www.moparisthebest.com/kbs/programmer-dvorak-NoSecondary-NumpadStandard-NoSwap-StandardNums-SwapAt-SwapPipe.svg)
 
-```rust
-extern crate uinput;
-use uinput::event::keyboard;
+The Problem
+-----------
+If you ever have mapped keys on linux, you know that there is the console keymap (loadkeys) and the X keymap (setxkbmap)
+also things like SDL and Virtualbox grab the input directly and respect no maps.  Lastly I want to revert to QWERTY when
+holding ctrl so ctrl+c works just like normal, without remapping all programs to ctrl+j.  Linux keymaps cannot do this either.
 
-use std::thread;
-use std::time::Duration;
+The Solution
+------------
+1. Grab a keyboard device directly so only we can read events from it.
+2. Create a new keyboard input device with uinput, this is identical to any other keyboard device to anything running on the box.
+3. Read input_events from real device, map them, send them to our created device.
 
-fn main() {
-	let mut device = uinput::default().unwrap()
-		.name("test").unwrap()
-		.event(uinput::event::Keyboard::All).unwrap()
-		.create().unwrap();
+This solution is what rusty-keys implements, it works in ttys, in X, in virtualbox even running windows or whatever,
+on SDL games, it will work literally everywhere, because rusty-keys just creates a regular keyboard.
 
-	thread::sleep(Duration::from_secs(1));
+How to run
+----------
 
-	device.click(&keyboard::Key::H).unwrap();
-	device.click(&keyboard::Key::E).unwrap();
-	device.click(&keyboard::Key::L).unwrap();
-	device.click(&keyboard::Key::L).unwrap();
-	device.click(&keyboard::Key::O).unwrap();
-	device.click(&keyboard::Key::Space).unwrap();
-	device.click(&keyboard::Key::W).unwrap();
-	device.click(&keyboard::Key::O).unwrap();
-	device.click(&keyboard::Key::R).unwrap();
-	device.click(&keyboard::Key::L).unwrap();
-	device.click(&keyboard::Key::D).unwrap();
-	device.click(&keyboard::Key::Enter).unwrap();
+When ran, it will read a keymap.toml file from your current working directory, refer to example and tweak to suit.
 
-	device.synchronize().unwrap();
-}
 ```
+Usage: rusty-keys [options]
+
+Options:
+    -h, --help          prints this help message
+    -v, --version       prints the version
+    -d, --device DEVICE specify the keyboard input device file
+    -c, --config FILE   specify the keymap config file to use
+```
+
+with only one keyboard attached:  
+`rusty-keys`
+
+with multiple keyboards, currently you must specify one:  
+`rusty-keys -d /dev/input/event0`
+
+find all eligible keyboard devices like:  
+`grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+`
+
+License
+-------
+AGPLv3 for now, message me if you have a problem with this
+
+Notes
+-----
+Technically this is a re-implementation of a [previous](https://code.moparisthebest.com/moparisthebest/uinput-mapper/src/master/uinputmapper/keymapper.py) [python](https://code.moparisthebest.com/moparisthebest/uinput-mapper/src/master/keymaps/dvorak.py) [program](https://code.moparisthebest.com/moparisthebest/uinput-mapper/src/master/input-read#L151)
+I had been using for 3 years previously.

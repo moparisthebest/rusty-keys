@@ -11,8 +11,8 @@ use rusty_keys::KeyMaps;
 use ffi::*;
 use libc::{c_int, input_event};
 
-use std::thread;
-use std::time::Duration;
+//use std::thread;
+//use std::time::Duration;
 
 use std::process::{exit, Command};
 use std::fs::File;
@@ -30,18 +30,17 @@ const EV_KEY_U16: u16 = EV_KEY as u16;
 #[derive(Debug)]
 struct Config {
     device_file: String,
-    log_file: String
+    config_file: String
 }
 
 impl Config {
-    fn new(device_file: String, log_file: String) -> Self {
-        Config { device_file: device_file, log_file: log_file }
+    fn new(device_file: String, config_file: String) -> Self {
+        Config { device_file: device_file, config_file: config_file }
     }
 }
 
 fn main() {
     let key_map = KeyMaps::key_map();
-
     //println!("key_map: {:?}", key_map);
 
     let device = rusty_keys::default().expect("1")
@@ -50,22 +49,16 @@ fn main() {
         //.event(uinput::event::Keyboard::All).unwrap()
         .create().expect("4");
 
-    let mut key_map = KeyMaps::from_cfg(&key_map, "keymap.toml");
-    //println!("keymaps: {:?}", keymaps);
-
-    //let mut key_map = KeyMap::new();
-    //key_map.map(KEY_A, KEY_B);
-
-    thread::sleep(Duration::from_secs(1));
-
-    //device.click(EV_KEY, KEY_H).unwrap();
-    //device.synchronize().unwrap();
+    //thread::sleep(Duration::from_secs(1));
 
     let config = parse_args();
-    println!("Config: {:?}", config);
+    //println!("Config: {:?}", config);
 
     let mut input_device = InputDevice::open(&config.device_file);
     input_device.grab();
+
+    let mut key_map = KeyMaps::from_cfg(&key_map, config.config_file);
+    //println!("keymaps: {:?}", keymaps);
 
     loop {
         let event = input_device.read_event();
@@ -94,8 +87,8 @@ fn parse_args() -> Config {
     let mut opts = Options::new();
     opts.optflag("h", "help", "prints this help message");
     opts.optflag("v", "version", "prints the version");
-    opts.optopt("d", "device", "specify the device file", "DEVICE");
-    opts.optopt("f", "file", "specify the file to log to", "FILE");
+    opts.optopt("d", "device", "specify the keyboard input device file", "DEVICE");
+    opts.optopt("c", "config", "specify the keymap config file to use", "FILE");
 
     let matches = opts.parse(&args[1..]).unwrap_or_else(|e| panic!("{}", e));
     if matches.opt_present("h") {
@@ -104,14 +97,14 @@ fn parse_args() -> Config {
     }
 
     if matches.opt_present("v") {
-        println!("{}", VERSION);
+        println!("rusty-keys {}", VERSION);
         exit(0);
     }
 
     let device_file = matches.opt_str("d").unwrap_or_else(|| get_default_device());
-    let log_file = matches.opt_str("f").unwrap_or("keys.log".to_owned());
+    let config_file = matches.opt_str("c").unwrap_or("keymap.toml".to_owned());
 
-    Config::new(device_file, log_file)
+    Config::new(device_file, config_file)
 }
 
 fn get_default_device() -> String {
