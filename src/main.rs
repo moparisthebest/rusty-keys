@@ -1,4 +1,4 @@
-extern crate uinput;
+extern crate rusty_keys;
 extern crate uinput_sys as ffi;
 extern crate libc;
 extern crate getopts;
@@ -6,7 +6,7 @@ extern crate getopts;
 #[macro_use]
 extern crate nix;
 
-use uinput::KeyMaps;
+use rusty_keys::KeyMaps;
 
 use ffi::*;
 use libc::{c_int, input_event};
@@ -44,7 +44,7 @@ fn main() {
 
     //println!("key_map: {:?}", key_map);
 
-    let device = uinput::default().expect("1")
+    let device = rusty_keys::default().expect("1")
         .name("test").expect("2")
         .event(key_map.values()).expect("3")
         //.event(uinput::event::Keyboard::All).unwrap()
