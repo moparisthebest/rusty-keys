@@ -20,16 +20,14 @@ impl Device {
 
 	#[doc(hidden)]
 	pub fn write(&mut self, kind: c_int, code: c_int, value: c_int) -> Res<()> {
-		unsafe {
-			let mut event = input_event {
-				time:  timeval { tv_sec: 0, tv_usec: 0 },
-				type_:  kind as u16,
-				code:  code as u16,
-				value: value as i32,
-			};
+		let event = input_event {
+			time:  timeval { tv_sec: 0, tv_usec: 0 },
+			type_:  kind as u16,
+			code:  code as u16,
+			value: value as i32,
+		};
 
-			self.write_event(event)
-		}
+		self.write_event(event)
 	}
 
 	#[doc(hidden)]

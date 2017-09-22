@@ -2,7 +2,7 @@ use std::path::Path;
 use std::{mem, slice};
 use std::ffi::CString;
 use libc::c_int;
-use nix::{self, fcntl, unistd, Errno};
+use nix::{self, fcntl, unistd};
 use nix::sys::stat;
 use ffi::*;
 use {Result as Res, Error, Device};

@@ -6,6 +6,9 @@ extern crate uinput_sys as ffi;
 
 extern crate nix;
 
+#[macro_use]
+extern crate serde_derive;
+
 #[cfg(feature = "udev")]
 extern crate libudev as udev;
 
@@ -15,6 +18,9 @@ mod error;
 pub use error::Error;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
+
+pub mod keymapper;
+pub use keymapper::KeyMaps;
 
 pub mod device;
 pub use device::Device;
