@@ -9,6 +9,10 @@ description = "Linux keyboard mapper"
 repository  = "https://code.moparisthebest.com/moparisthebest/rusty-keys"
 keywords    = ["linux", "input", "keyboard", "keymapper"]
 
+exclude = [
+    "keymap.orig.toml",
+]
+
 [dependencies]
 libc         = "0.2"
 nix          = "0.5"
