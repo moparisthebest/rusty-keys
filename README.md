@@ -44,6 +44,17 @@ with multiple keyboards, currently you must specify one:
 find all eligible keyboard devices like:  
 `grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+`
 
+For using the systemd unit with by-id or by-path:
+```
+$ systemd-escape --template=rusty-keys@.service by-id/usb-04c8_USB_Keyboard-event-kbd
+rusty-keys@by\x2did-usb\x2d04c8_USB_Keyboard\x2devent\x2dkbd.service
+```
+
+How to install
+--------------
+ * `cargo install rusty-keys`  
+ * Arch Linux [AUR PKGBUILD](https://aur.archlinux.org/packages/rusty-keys/)
+
 License
 -------
 AGPLv3 for now, message me if you have a problem with this

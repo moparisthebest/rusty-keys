@@ -61,9 +61,9 @@ fn main() {
     //println!("keymaps: {:?}", keymaps);
 
     loop {
-        let event = input_device.read_event();
+        let mut event = input_device.read_event();
         if event.type_ == EV_KEY_U16 {
-            key_map.send_event(event, &device);
+            key_map.send_event(&mut event, &device);
             /*
                 println!("type: {} code: {}", event.type_, event.code);
                 if event.code == KEY_A as u16 {
@@ -71,7 +71,7 @@ fn main() {
                 }
                 */
         } else {
-            device.write_event(event).expect("could not write event?");
+            device.write_event(&mut event).expect("could not write event?");
         }
     }
 }

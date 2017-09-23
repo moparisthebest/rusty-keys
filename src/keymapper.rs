@@ -24,7 +24,7 @@ const KEY_RIGHTSHIFT_U16: u16 = KEY_RIGHTSHIFT as u16;
 const KEY_CAPSLOCK_U16: u16 = KEY_CAPSLOCK as u16;
 
 trait KeyMapper {
-    fn send_event(&mut self, key_state: &mut [bool], event: input_event, device: &Device);
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device);
 }
 
 pub struct KeyMaps {
@@ -155,7 +155,7 @@ impl KeyMaps {
 
 //impl KeyMapper for KeyMaps {
 impl KeyMaps {
-    pub fn send_event(&mut self, event: input_event, device: &Device) {
+    pub fn send_event(&mut self, mut event: &mut input_event, device: &Device) {
         //println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
         if event.value != 2 {
             // todo: index check here...
@@ -191,7 +191,7 @@ impl KeyMaps {
                 }
             }
         }
-        self.keymaps[self.current_keymap_index].send_event(&mut self.key_state, event, device);
+        self.keymaps[self.current_keymap_index].send_event(&self.key_state, &mut event, device);
     }
 }
 
@@ -238,7 +238,7 @@ impl KeyMap {
 }
 
 impl KeyMapper for KeyMap {
-    fn send_event(&mut self, key_state: &mut [bool], event: input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
         self.keymap[event.code as usize].send_event(key_state, event, device);
         //event.code = self.keymap[event.code as usize];
         //device.write_event(event).expect("could not write event?");
@@ -247,7 +247,7 @@ impl KeyMapper for KeyMap {
 
 #[allow(unused_variables)]
 impl KeyMapper for u16 {
-    fn send_event(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], mut event: &mut input_event, device: &Device) {
         event.code = *self;
         device.write_event(event).expect("could not write event?");
     }
@@ -259,7 +259,7 @@ struct Noop {}
 
 #[allow(unused_variables)]
 impl KeyMapper for Noop {
-    fn send_event(&mut self, key_state: &mut [bool], event: input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
         device.write_event(event).expect("could not write event?");
     }
 }
@@ -275,8 +275,8 @@ struct HalfInvertedKey {
 }
 
 impl HalfInvertedKey {
-    fn send_key(&mut self, key_state: &mut [bool], mut event: input_event, device: &Device, left_shift: bool, right_shift: bool, caps_lock: bool) {
-        let mut code = self.code;
+    fn send_key(&self, key_state: &[bool], event: &mut input_event, device: &Device, left_shift: bool, right_shift: bool, caps_lock: bool) {
+        let code = self.code;
         let value = event.value;
         let mut invert_shift = self.invert_shift;
         if value == DOWN {
@@ -327,7 +327,7 @@ impl HalfInvertedKey {
 }
 
 impl KeyMapper for HalfInvertedKey {
-    fn send_event(&mut self, key_state: &mut [bool], event: input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
         let left_shift = key_state[LEFTSHIFT_INDEX];
         let right_shift = key_state[RIGHTSHIFT_INDEX];
         let caps_lock = key_state[CAPSLOCK_INDEX];
@@ -341,7 +341,7 @@ struct ShiftInvertedKey {
 }
 
 impl KeyMapper for ShiftInvertedKey {
-    fn send_event(&mut self, key_state: &mut [bool], event: input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
         let left_shift = key_state[LEFTSHIFT_INDEX];
         let right_shift = key_state[RIGHTSHIFT_INDEX];
         let caps_lock = key_state[CAPSLOCK_INDEX];

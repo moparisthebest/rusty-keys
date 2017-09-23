@@ -20,23 +20,23 @@ impl Device {
 
 	#[doc(hidden)]
 	pub fn write(&mut self, kind: c_int, code: c_int, value: c_int) -> Res<()> {
-		let event = input_event {
+		let mut event = input_event {
 			time:  timeval { tv_sec: 0, tv_usec: 0 },
 			type_:  kind as u16,
 			code:  code as u16,
 			value: value as i32,
 		};
 
-		self.write_event(event)
+		self.write_event(&mut event)
 	}
 
 	#[doc(hidden)]
-	pub fn write_event(&self, mut event: input_event) -> Res<()> {
+	pub fn write_event(&self, event: &mut input_event) -> Res<()> {
 		unsafe {
 			gettimeofday(&mut event.time, ptr::null_mut());
 
-			let ptr  = &event as *const _ as *const u8;
-			let size = mem::size_of_val(&event);
+			let ptr  = event as *const _ as *const u8;
+			let size = mem::size_of_val(event);
 
 			try!(unistd::write(self.fd, slice::from_raw_parts(ptr, size)));
 		}
