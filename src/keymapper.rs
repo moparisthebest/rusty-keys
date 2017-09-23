@@ -196,8 +196,8 @@ impl KeyMaps {
 const KEY_MAX: usize = 249;
 
 struct KeyMap {
-    keymap: Vec<Key>,
-    //[Box<KeyMapper>; KEY_MAX],
+    //keymap: Vec<Key>,
+    keymap: [Key; KEY_MAX],
 }
 
 impl KeyMap {
@@ -205,11 +205,14 @@ impl KeyMap {
         //let mut keymap = [0u16; KEY_MAX];
         //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(NOOP); KEY_MAX];
         //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(0u16); KEY_MAX];
+        let keymap : [Key; KEY_MAX] = [Key::Noop; KEY_MAX];
+        /*
         let mut keymap: Vec<Key> = Vec::with_capacity(KEY_MAX);
         #[allow(unused_variables)]
         for x in 0..KEY_MAX {
             keymap.push(Key::Noop);
         }
+        */
         // which is rustier
         /*
         for x  in 0..KEY_MAX {
@@ -251,6 +254,7 @@ impl KeyMapper for u16 {
 }
 
 // todo:capslock_nomodify is like a whole-key thing, not a half-key thing, split code/invert_shift to own struct, send into send_key from *InvertedKey, maybe anyway, consider it, maybe 1 char for whole key and another for half?
+#[derive(Clone, Copy)]
 struct HalfInvertedKey {
     code: u16,
     // code this is describing
@@ -321,6 +325,7 @@ impl KeyMapper for HalfInvertedKey {
     }
 }
 
+#[derive(Clone, Copy)]
 enum Key {
     Noop,
     Direct(u16),
