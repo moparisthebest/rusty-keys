@@ -58,12 +58,30 @@ fn parse_key_half_inverted(key_map: &HashMap<&'static str, *const c_int>, key: &
     }
 }
 
-/*
 // maybe shortcut to this if not contains * or :
-fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<Box<KeyMapper + 'static>> {
-    keymap.split(",").map(|k| Box::new(parse_key(key_map, k)) as Box<KeyMapper>).collect()
+fn parse_keymap_u16(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<u16> {
+    keymap.split(",").map(|k| parse_key(key_map, k)).collect()
 }
-*/
+
+// todo: how do I return an iterator here instead of .collect to Vec?
+fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<Key> {
+    keymap.split(",").map(|k| {
+        let ret: Key = if k.contains(HALF_KEY_SEPARATOR) {
+            let keys: Vec<&str> = k.split(HALF_KEY_SEPARATOR).collect();
+            if keys.len() != 2 {
+                panic!("split key can only have 2 keys, 1 :, has {} keys", keys.len());
+            }
+            let mut shift_half = parse_key_half_inverted(key_map, keys[1]);
+            shift_half.invert_shift = !shift_half.invert_shift;
+            Key::FullKey(parse_key_half_inverted(key_map, keys[0]), shift_half)
+        } else if k.contains(INVERT_KEY_FLAG) || k.contains(CAPS_MODIFY_KEY_FLAG) {
+            Key::HalfKey(parse_key_half_inverted(key_map, k))
+        } else {
+            Key::Direct(parse_key(key_map, k))
+        };
+        ret
+    }).collect()
+}
 
 impl KeyMaps {
     pub fn from_cfg<P: AsRef<Path>>(key_map: &HashMap<&'static str, *const c_int>, path: P) -> KeyMaps {
@@ -87,51 +105,34 @@ impl KeyMaps {
             if x == 0 {
                 continue;
             }
-            let v = v.split(",").map(|k| {
-                let ret: Key = if k.contains(HALF_KEY_SEPARATOR) {
-                    let keys: Vec<&str> = k.split(HALF_KEY_SEPARATOR).collect();
-                    if keys.len() != 2 {
-                        panic!("split key can only have 2 keys, 1 :, has {} keys", keys.len());
+            if v.contains(HALF_KEY_SEPARATOR) || v.contains(INVERT_KEY_FLAG) || v.contains(CAPS_MODIFY_KEY_FLAG) {
+                // we need KeyMap, the complicated more memory taking one
+                let v = parse_keymap(key_map, v);
+                let mut keymap = KeyMap::new();
+                let mut i: usize = 0;
+                for key_code in v {
+                    // todo: if these are the same, do Noop instead
+                    keymap.map(base_keymap[i], key_code);
+                    i = i + 1;
+                    if i > base_keymap.len() {
+                        panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, i);
                     }
-                    let mut shift_half = parse_key_half_inverted(key_map, keys[1]);
-                    shift_half.invert_shift = !shift_half.invert_shift;
-                    Key::FullKey(parse_key_half_inverted(key_map, keys[0]), shift_half)
-                } else if k.contains(INVERT_KEY_FLAG) || k.contains(CAPS_MODIFY_KEY_FLAG) {
-                    Key::HalfKey(parse_key_half_inverted(key_map, k))
-                } else {
-                    Key::Direct(parse_key(key_map, k))
-                };
-                ret
-            });//parse_keymap(key_map, v);
-            //println!("config.keymaps[{}]: {:?}", x, v);
-            /*
-                if v.len() != base_keymap.len() {
-                    panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, v.len());
                 }
-                */
-            let mut keymap = KeyMap::new();
-            /*
-                for(i, key_code) in v.iter().enumerate() {
-                    let ptr = Box::into_raw(*key_code);
-                    //keymap.map(base_keymap[i], &key_code);
+                keymaps.push(Box::new(keymap));
+            } else {
+                // this is a simple keymap
+                let v = parse_keymap_u16(key_map, v);
+                let mut keymap = CodeKeyMap::new();
+                let mut i: usize = 0;
+                for key_code in v {
+                    keymap.map(base_keymap[i], key_code);
+                    i = i + 1;
+                    if i > base_keymap.len() {
+                        panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, i);
+                    }
                 }
-
-            for(i, key_code) in base_keymap.iter().enumerate() {
-                //let ptr = Box::into_raw(*key_code);
-                keymap.map(*key_code, v[i]);
+                keymaps.push(Box::new(keymap));
             }
-            */
-            let mut i: usize = 0;
-            for key_code in v {
-                keymap.map(base_keymap[i], key_code);
-                i = i + 1;
-                if i > base_keymap.len() {
-                    panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, i);
-                }
-            }
-
-            //println!("keymap[{}]: {:?}", x, &keymap.keymap[..]);
-            keymaps.push(Box::new(keymap));
         }
         //println!("keymaps: {:?}", keymaps);
         //println!("keymap_index_keys: {:?}", keymap_index_keys);
@@ -242,6 +243,40 @@ impl KeyMapper for KeyMap {
         self.keymap[event.code as usize].send_event(key_state, event, device);
         //event.code = self.keymap[event.code as usize];
         //device.write_event(event).expect("could not write event?");
+    }
+}
+
+struct CodeKeyMap {
+    //keymap: Vec<Key>,
+    keymap: [u16; KEY_MAX],
+}
+
+impl CodeKeyMap {
+    pub fn new() -> Self {
+        let mut keymap = [0u16; KEY_MAX];
+        // which is rustier
+        /*
+        for x  in 0..KEY_MAX {
+            keymap[x as usize] = x as u16;
+        }
+        */
+        for (x, v) in keymap.iter_mut().enumerate() {
+            *v = x as u16;
+        }
+        //println!("keymap: {:?}", &keymap[..]);
+        CodeKeyMap {
+            keymap: keymap
+        }
+    }
+
+    pub fn map(&mut self, from: u16, to: u16) {
+        self.keymap[from as usize] = to;
+    }
+}
+
+impl KeyMapper for CodeKeyMap {
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
+        self.keymap[event.code as usize].send_event(key_state, event, device);
     }
 }
 
