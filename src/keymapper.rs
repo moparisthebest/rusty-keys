@@ -80,7 +80,7 @@ impl KeyMaps {
         }
         let base_keymap = parse_keymap_numeric(key_map, &config.keymaps[0]);
         //println!("base_keymap      : {:?}", base_keymap);
-        let mut keymaps: Vec<Box<KeyMapper>> = vec!(Box::new(NOOP)); // todo: can we share the box?
+        let mut keymaps: Vec<Box<KeyMapper>> = vec!(Box::new(Key::Noop)); // todo: can we share the box?
         let mut keymap_index_keys: HashMap<u16, usize> = HashMap::new();
         for (x, v) in config.keymaps.iter().enumerate() {
             keymap_index_keys.insert(*key_map.get(&*x.to_string()).unwrap() as u16, x);
@@ -88,21 +88,18 @@ impl KeyMaps {
                 continue;
             }
             let v = v.split(",").map(|k| {
-                let ret: Box<KeyMapper> = if k.contains(HALF_KEY_SEPARATOR) {
+                let ret: Key = if k.contains(HALF_KEY_SEPARATOR) {
                     let keys: Vec<&str> = k.split(HALF_KEY_SEPARATOR).collect();
                     if keys.len() != 2 {
                         panic!("split key can only have 2 keys, 1 :, has {} keys", keys.len());
                     }
                     let mut shift_half = parse_key_half_inverted(key_map, keys[1]);
                     shift_half.invert_shift = !shift_half.invert_shift;
-                    Box::new(ShiftInvertedKey {
-                        noshift_half: parse_key_half_inverted(key_map, keys[0]),
-                        shift_half: shift_half,
-                    })
+                    Key::FullKey(parse_key_half_inverted(key_map, keys[0]), shift_half)
                 } else if k.contains(INVERT_KEY_FLAG) || k.contains(CAPS_MODIFY_KEY_FLAG) {
-                    Box::new(parse_key_half_inverted(key_map, k))
+                    Key::HalfKey(parse_key_half_inverted(key_map, k))
                 } else {
-                    Box::new(parse_key(key_map, k))
+                    Key::Direct(parse_key(key_map, k))
                 };
                 ret
             });//parse_keymap(key_map, v);
@@ -199,7 +196,7 @@ impl KeyMaps {
 const KEY_MAX: usize = 249;
 
 struct KeyMap {
-    keymap: Vec<Box<KeyMapper>>,
+    keymap: Vec<Key>,
     //[Box<KeyMapper>; KEY_MAX],
 }
 
@@ -208,10 +205,10 @@ impl KeyMap {
         //let mut keymap = [0u16; KEY_MAX];
         //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(NOOP); KEY_MAX];
         //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(0u16); KEY_MAX];
-        let mut keymap: Vec<Box<KeyMapper>> = Vec::with_capacity(KEY_MAX);
+        let mut keymap: Vec<Key> = Vec::with_capacity(KEY_MAX);
         #[allow(unused_variables)]
         for x in 0..KEY_MAX {
-            keymap.push(Box::new(NOOP));
+            keymap.push(Key::Noop);
         }
         // which is rustier
         /*
@@ -232,7 +229,7 @@ impl KeyMap {
             self.keymap[from as usize] = to;
         }
     */
-    pub fn map(&mut self, from: u16, to: Box<KeyMapper>) {
+    pub fn map(&mut self, from: u16, to: Key) {
         self.keymap[from as usize] = to;
     }
 }
@@ -249,17 +246,6 @@ impl KeyMapper for KeyMap {
 impl KeyMapper for u16 {
     fn send_event(&self, key_state: &[bool], mut event: &mut input_event, device: &Device) {
         event.code = *self;
-        device.write_event(event).expect("could not write event?");
-    }
-}
-
-const NOOP: Noop = Noop {};
-// nightly I hear... const BOX_NOOP : Box<KeyMapper> = Box::new(NOOP);
-struct Noop {}
-
-#[allow(unused_variables)]
-impl KeyMapper for Noop {
-    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
         device.write_event(event).expect("could not write event?");
     }
 }
@@ -335,20 +321,35 @@ impl KeyMapper for HalfInvertedKey {
     }
 }
 
-struct ShiftInvertedKey {
-    noshift_half: HalfInvertedKey,
-    shift_half: HalfInvertedKey,
+enum Key {
+    Noop,
+    Direct(u16),
+    HalfKey(HalfInvertedKey),
+    FullKey(HalfInvertedKey, HalfInvertedKey),
 }
 
-impl KeyMapper for ShiftInvertedKey {
+impl KeyMapper for Key {
     fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
-        let left_shift = key_state[LEFTSHIFT_INDEX];
-        let right_shift = key_state[RIGHTSHIFT_INDEX];
-        let caps_lock = key_state[CAPSLOCK_INDEX];
-        if caps_lock != (left_shift || right_shift) {
-            self.shift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
-        } else {
-            self.noshift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
+        match *self {
+            Key::Noop => {
+                device.write_event(event).expect("could not write event?");
+            },
+            Key::Direct(code) => {
+                code.send_event(key_state, event, device);
+            },
+            Key::HalfKey(ref key_half) => {
+                key_half.send_event(key_state, event, device);
+            },
+            Key::FullKey(ref noshift_half, ref shift_half) => {
+                let left_shift = key_state[LEFTSHIFT_INDEX];
+                let right_shift = key_state[RIGHTSHIFT_INDEX];
+                let caps_lock = key_state[CAPSLOCK_INDEX];
+                if caps_lock != (left_shift || right_shift) {
+                    shift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
+                } else {
+                    noshift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
+                }
+            },
         }
     }
 }
