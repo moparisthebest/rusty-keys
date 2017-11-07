@@ -43,11 +43,13 @@ fn main() {
     let key_map = KeyMaps::key_map();
     //println!("key_map: {:?}", key_map);
 
-    let device = rusty_keys::default().expect("1")
-        .name("test").expect("2")
-        .event(key_map.values()).expect("3")
-        //.event(uinput::event::Keyboard::All).unwrap()
-        .create().expect("4");
+    let device = rusty_keys::default()
+        .or_else(|_| rusty_keys::open("/dev/uinput"))
+        .or_else(|_| rusty_keys::open("/dev/input/uinput"))
+        .expect("cannot open uinput device")
+        .name("test").expect("cannot name uinput device")
+        .event(key_map.values()).expect("cannot register events on uinput device")
+        .create().expect("cannot create uinput device");
 
     //thread::sleep(Duration::from_secs(1));
 
