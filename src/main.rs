@@ -2,6 +2,7 @@ extern crate rusty_keys;
 extern crate uinput_sys as ffi;
 extern crate libc;
 extern crate getopts;
+extern crate inotify;
 
 #[macro_use]
 extern crate nix;
@@ -25,6 +26,12 @@ use std::os::unix::io::AsRawFd;
 
 use getopts::Options;
 
+use inotify::{
+    EventMask,
+    Inotify,
+    WatchMask,
+};
+
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 const EV_KEY_U16: u16 = EV_KEY as u16;
@@ -44,31 +51,89 @@ impl Config {
 fn main() {
     let config = parse_args();
     //println!("Config: {:?}", config);
-    let (tx, rx) = mpsc::channel();
 
-    for device_file in config.device_files.iter() {
-        let device_file = device_file.clone();
-        let config_file = config.config_file.clone();
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let ret = do_map(&device_file, &config_file).err();
-            if let Some(e) = ret {
-                println!("mapping for {} ended due to error: {}", device_file, e);
+    if config.device_files.len() > 0 {
+        // we only want to operate on device files sent in then quit
+        let (tx, rx) = mpsc::channel();
+
+        for device_file in config.device_files.iter() {
+            let device_file = device_file.clone();
+            let config_file = config.config_file.clone();
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let ret = do_map(&device_file, &config_file).err();
+                if let Some(e) = ret {
+                    println!("mapping for {} ended due to error: {}", device_file, e);
+                }
+                tx.send(1).unwrap();
+            });
+        }
+        // wait for all threads to finish
+        let mut num_threads = config.device_files.len();
+        for received in rx {
+            num_threads -= received;
+            if num_threads == 0 {
+                break;
             }
-            tx.send(1).unwrap();
-        });
-    }
-    // wait for all threads to finish
-    let mut num_threads = config.device_files.len();
-    for received in rx {
-        num_threads -= received;
-        if num_threads == 0 {
-            break;
+        }
+    } else {
+        // we want to wait forever starting new threads for any new keyboard devices
+        let mut inotify = Inotify::init().expect("Failed to initialize inotify");
+
+        inotify.add_watch("/dev/input/", WatchMask::CREATE).expect("Failed to add inotify watch");
+
+        let device_files = get_keyboard_device_filenames();
+        println!("Detected devices: {:?}", device_files);
+        for device_file in device_files.iter() {
+            let device_file = device_file.clone();
+            let mut filename = "/dev/input/".to_string();
+            filename.push_str(&device_file);
+            let config_file = config.config_file.clone();
+            thread::spawn(move || {
+                let ret = do_map(&filename, &config_file).err();
+                if let Some(e) = ret {
+                    println!("mapping for {} ended due to error: {}", filename, e);
+                }
+            });
+        }
+
+        let mut buffer = [0u8; 4096];
+        loop {
+            let events = inotify.read_events_blocking(&mut buffer).expect("Failed to read inotify events");
+
+            for event in events {
+                if !event.mask.contains(EventMask::ISDIR) && event.name.is_some() {
+                    println!("File created: {:?}", event.name);
+                    if let Some(device_file) = event.name.unwrap().to_str() {
+                        // check if this is an eligible keyboard device
+                        let device_files = get_keyboard_device_filenames();
+                        if !device_files.contains(&device_file.to_string()) {
+                            continue;
+                        }
+                        println!("starting mapping thread for: {}", device_file);
+                        // todo: same as loop above, re-factor
+                        let device_file = device_file.clone();
+                        let mut filename = "/dev/input/".to_string();
+                        filename.push_str(&device_file);
+                        let config_file = config.config_file.clone();
+                        thread::spawn(move || {
+                            let ret = do_map(&filename, &config_file).err();
+                            if let Some(e) = ret {
+                                println!("mapping for {} ended due to error: {}", filename, e);
+                            }
+                        });
+                        // todo: end same as
+                    }
+                }
+            }
         }
     }
 }
 
 fn do_map(device_file: &str, config_file: &str) -> Result<()> {
+    let mut input_device = InputDevice::open(device_file)?;
+    input_device.grab()?;
+
     let key_map = KeyMaps::key_map();
     //println!("key_map: {:?}", key_map);
 
@@ -78,9 +143,6 @@ fn do_map(device_file: &str, config_file: &str) -> Result<()> {
         .name("rusty-keys")?
         .event(key_map.values())?
         .create()?;
-
-    let mut input_device = InputDevice::open(device_file)?;
-    input_device.grab()?;
 
     let mut key_map = KeyMaps::from_cfg(&key_map, config_file);
     //println!("keymaps: {:?}", keymaps);
@@ -126,13 +188,7 @@ fn parse_args() -> Config {
 
     let config_file = matches.opt_str("c").unwrap_or("keymap.toml".to_owned());
 
-    let mut device_files = matches.free;
-    if device_files.len() == 0 {
-        device_files = get_keyboard_device_filenames();
-    }
-    println!("Detected devices: {:?}", device_files);
-
-    Config::new(device_files, config_file)
+    Config::new(matches.free, config_file)
 }
 
 // Detects and returns the name of the keyboard device file. This function uses
@@ -149,9 +205,7 @@ fn get_keyboard_device_filenames() -> Vec<String> {
 
     let mut filenames = Vec::new();
     for file in res_str.trim().split('\n') {
-        let mut filename = "/dev/input/".to_string();
-        filename.push_str(file);
-        filenames.push(filename);
+        filenames.push(file.to_string());
     }
     filenames
 }
