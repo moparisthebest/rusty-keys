@@ -97,7 +97,7 @@ fn do_map(device_file: &str, config_file: &str) -> Result<()> {
 
 fn parse_args() -> Config {
     fn print_usage(program: &str, opts: Options) {
-        let brief = format!("Usage: {} [options]", program);
+        let brief = format!("Usage: {} [options] [device_files...]", program);
         println!("{}", opts.usage(&brief));
     }
 
@@ -107,9 +107,13 @@ fn parse_args() -> Config {
     opts.optflag("h", "help", "prints this help message");
     opts.optflag("v", "version", "prints the version");
     opts.optopt("c", "config", "specify the keymap config file to use", "FILE");
-    opts.optmulti("d", "device", "specify the keyboard input device file", "DEVICE");
 
-    let matches = opts.parse(&args[1..]).unwrap_or_else(|e| panic!("{}", e));
+    let matches = opts.parse(&args[1..]);
+    if matches.is_err() {
+        print_usage(&args[0], opts);
+        exit(0);
+    }
+    let matches = matches.unwrap();
     if matches.opt_present("h") {
         print_usage(&args[0], opts);
         exit(0);
@@ -120,12 +124,13 @@ fn parse_args() -> Config {
         exit(0);
     }
 
-    let mut device_files = matches.opt_strs("d");
+    let config_file = matches.opt_str("c").unwrap_or("keymap.toml".to_owned());
+
+    let mut device_files = matches.free;
     if device_files.len() == 0 {
         device_files = get_keyboard_device_filenames();
     }
     println!("Detected devices: {:?}", device_files);
-    let config_file = matches.opt_str("c").unwrap_or("keymap.toml".to_owned());
 
     Config::new(device_files, config_file)
 }
@@ -135,10 +140,12 @@ fn parse_args() -> Config {
 // the keyboard device file should always have an EV of 120013
 fn get_keyboard_device_filenames() -> Vec<String> {
     let command_str = "grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+".to_string();
-    let res = Command::new("sh").arg("-c").arg(command_str).output().unwrap_or_else(|e| {
-        panic!("{}", e);
-    });
-    let res_str = std::str::from_utf8(&res.stdout).unwrap();
+    let res = Command::new("sh").arg("-c").arg(command_str).output();
+    if res.is_err() {
+        return Vec::new();
+    }
+    let res = res.unwrap();
+    let res_str = std::str::from_utf8(&res.stdout).unwrap_or("");
 
     let mut filenames = Vec::new();
     for file in res_str.trim().split('\n') {
