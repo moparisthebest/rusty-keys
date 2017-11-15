@@ -18,6 +18,7 @@ use std::process::{exit, Command};
 use std::fs::File;
 use std::io::Read;
 use std::{env, mem};
+use std::thread;
 
 use std::os::unix::io::AsRawFd;
 
@@ -29,52 +30,60 @@ const EV_KEY_U16: u16 = EV_KEY as u16;
 
 #[derive(Debug)]
 struct Config {
-    device_file: String,
+    device_files: Vec<String>,
     config_file: String
 }
 
 impl Config {
-    fn new(device_file: String, config_file: String) -> Self {
-        Config { device_file: device_file, config_file: config_file }
+    fn new(device_files: Vec<String>, config_file: String) -> Self {
+        Config { device_files: device_files, config_file: config_file }
     }
 }
 
 fn main() {
-    let key_map = KeyMaps::key_map();
-    //println!("key_map: {:?}", key_map);
-
-    let device = rusty_keys::open("/dev/uinput")
-        .or_else(|_| rusty_keys::open("/dev/input/uinput"))
-        .or_else(|_| rusty_keys::default())
-        .expect("cannot open uinput device")
-        .name("test").expect("cannot name uinput device")
-        .event(key_map.values()).expect("cannot register events on uinput device")
-        .create().expect("cannot create uinput device");
-
-    //thread::sleep(Duration::from_secs(1));
-
     let config = parse_args();
     //println!("Config: {:?}", config);
 
-    let mut input_device = InputDevice::open(&config.device_file);
-    input_device.grab();
+    for device_file in config.device_files.iter() {
+        let device_file = device_file.clone();
+        let config_file = config.config_file.clone();
+        thread::spawn(move || {
+            let key_map = KeyMaps::key_map();
+            //println!("key_map: {:?}", key_map);
 
-    let mut key_map = KeyMaps::from_cfg(&key_map, config.config_file);
-    //println!("keymaps: {:?}", keymaps);
+            let device = rusty_keys::open("/dev/uinput")
+                .or_else(|_| rusty_keys::open("/dev/input/uinput"))
+                .or_else(|_| rusty_keys::default())
+                .expect("cannot open uinput device")
+                .name("test").expect("cannot name uinput device")
+                .event(key_map.values()).expect("cannot register events on uinput device")
+                .create().expect("cannot create uinput device");
 
-    loop {
-        let mut event = input_device.read_event();
-        if event.type_ == EV_KEY_U16 {
-            key_map.send_event(&mut event, &device);
-            /*
-                println!("type: {} code: {}", event.type_, event.code);
-                if event.code == KEY_A as u16 {
-                    event.code = KEY_B as u16;
+            let mut input_device = InputDevice::open(&device_file);
+            input_device.grab();
+
+            let mut key_map = KeyMaps::from_cfg(&key_map, config_file);
+            //println!("keymaps: {:?}", keymaps);
+
+            loop {
+                let mut event = input_device.read_event();
+                if event.type_ == EV_KEY_U16 {
+                    key_map.send_event(&mut event, &device);
+                    /*
+                        println!("type: {} code: {}", event.type_, event.code);
+                        if event.code == KEY_A as u16 {
+                            event.code = KEY_B as u16;
+                        }
+                        */
+                } else {
+                    device.write_event(&mut event).expect("could not write event?");
                 }
-                */
-        } else {
-            device.write_event(&mut event).expect("could not write event?");
-        }
+            }
+        });
+    }
+    // wait for all threads to finish
+    loop {
+        thread::sleep(std::time::Duration::from_secs(u64::max_value()));
     }
 }
 
@@ -89,8 +98,8 @@ fn parse_args() -> Config {
     let mut opts = Options::new();
     opts.optflag("h", "help", "prints this help message");
     opts.optflag("v", "version", "prints the version");
-    opts.optopt("d", "device", "specify the keyboard input device file", "DEVICE");
     opts.optopt("c", "config", "specify the keymap config file to use", "FILE");
+    opts.optmulti("d", "device", "specify the keyboard input device file", "DEVICE");
 
     let matches = opts.parse(&args[1..]).unwrap_or_else(|e| panic!("{}", e));
     if matches.opt_present("h") {
@@ -103,22 +112,14 @@ fn parse_args() -> Config {
         exit(0);
     }
 
-    let device_file = matches.opt_str("d").unwrap_or_else(|| get_default_device());
+    let mut device_files = matches.opt_strs("d");
+    if device_files.len() == 0 {
+        device_files = get_keyboard_device_filenames();
+    }
+    println!("Detected devices: {:?}", device_files);
     let config_file = matches.opt_str("c").unwrap_or("keymap.toml".to_owned());
 
-    Config::new(device_file, config_file)
-}
-
-fn get_default_device() -> String {
-    let mut filenames = get_keyboard_device_filenames();
-    println!("Detected devices: {:?}", filenames);
-
-    if filenames.len() == 1 {
-        filenames.swap_remove(0)
-    } else {
-        panic!("The following keyboard devices were detected: {:?}. Please select one using \
-                the `-d` flag", filenames);
-    }
+    Config::new(device_files, config_file)
 }
 
 // Detects and returns the name of the keyboard device file. This function uses
