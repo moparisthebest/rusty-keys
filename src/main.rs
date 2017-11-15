@@ -51,33 +51,7 @@ fn main() {
         let config_file = config.config_file.clone();
         let tx = tx.clone();
         thread::spawn(move || {
-            let key_map = KeyMaps::key_map();
-            //println!("key_map: {:?}", key_map);
-
-            let device = rusty_keys::open("/dev/uinput")
-                .or_else(|_| rusty_keys::open("/dev/input/uinput"))
-                .or_else(|_| rusty_keys::default())
-                .expect("cannot open uinput device")
-                .name("test").expect("cannot name uinput device")
-                .event(key_map.values()).expect("cannot register events on uinput device")
-                .create().expect("cannot create uinput device");
-
-            let mut input_device = InputDevice::open(&device_file);
-            input_device.grab();
-
-            let mut key_map = KeyMaps::from_cfg(&key_map, config_file);
-            //println!("keymaps: {:?}", keymaps);
-
-            loop {
-                let mut event = if let Ok(e) = input_device.read_event() { e } else { break };
-                if event.type_ == EV_KEY_U16 {
-                    key_map.send_event(&mut event, &device);
-                } else {
-                    if device.write_event(&mut event).is_err() {
-                        break;
-                    }
-                }
-            }
+            do_map(&device_file, &config_file).ok();
             tx.send(1).unwrap();
         });
     }
@@ -88,6 +62,33 @@ fn main() {
         num_threads = num_threads - received;
         if num_threads == 0 {
             break;
+        }
+    }
+}
+
+fn do_map(device_file: &str, config_file: &str) -> Result<()> {
+    let key_map = KeyMaps::key_map();
+    //println!("key_map: {:?}", key_map);
+
+    let device = rusty_keys::open("/dev/uinput")
+        .or_else(|_| rusty_keys::open("/dev/input/uinput"))
+        .or_else(|_| rusty_keys::default())?
+        .name("rusty-keys")?
+        .event(key_map.values())?
+        .create()?;
+
+    let mut input_device = InputDevice::open(device_file)?;
+    input_device.grab()?;
+
+    let mut key_map = KeyMaps::from_cfg(&key_map, config_file);
+    //println!("keymaps: {:?}", keymaps);
+
+    loop {
+        let mut event = input_device.read_event()?;
+        if event.type_ == EV_KEY_U16 {
+            key_map.send_event(&mut event, &device);
+        } else {
+            device.write_event(&mut event)?
         }
     }
 }
@@ -158,19 +159,15 @@ struct InputDevice {
     buf: [u8; SIZE_OF_INPUT_EVENT],
 }
 
-#[cfg(feature = "udev")]
-extern crate libudev as udev;
-mod error;
-pub use error::Error;
-type Result<T> = ::std::result::Result<T, Error>;
+use rusty_keys::{Error,Result};
 
 impl InputDevice {
-    pub fn open(device_file: &str) -> Self {
-        let device_file = File::open(device_file).unwrap_or_else(|e| panic!("{}", e));
-        InputDevice {
+    pub fn open(device_file: &str) -> Result<Self> {
+        let device_file = File::open(device_file)?;
+        Ok(InputDevice {
             device_file: device_file,
             buf: [0u8; SIZE_OF_INPUT_EVENT],
-        }
+        })
     }
 
     pub fn read_event(&mut self) -> Result<input_event> {
@@ -182,10 +179,11 @@ impl InputDevice {
         Ok(event)
     }
 
-    pub fn grab(&mut self) {
+    pub fn grab(&mut self) -> Result<()> {
         unsafe {
-            eviocgrab(self.device_file.as_raw_fd(), 1 as *const c_int).expect("no grab?");
+            eviocgrab(self.device_file.as_raw_fd(), 1 as *const c_int)?;
         }
+        Ok(())
     }
 
     pub fn release(&mut self) -> Result<()> {
