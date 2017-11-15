@@ -43,9 +43,9 @@ fn main() {
     let key_map = KeyMaps::key_map();
     //println!("key_map: {:?}", key_map);
 
-    let device = rusty_keys::default()
-        .or_else(|_| rusty_keys::open("/dev/uinput"))
+    let device = rusty_keys::open("/dev/uinput")
         .or_else(|_| rusty_keys::open("/dev/input/uinput"))
+        .or_else(|_| rusty_keys::default())
         .expect("cannot open uinput device")
         .name("test").expect("cannot name uinput device")
         .event(key_map.values()).expect("cannot register events on uinput device")
