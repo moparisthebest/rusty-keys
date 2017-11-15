@@ -8,6 +8,8 @@ use std::fs::File;
 use std::io::Read;
 use std::collections::HashMap;
 
+use {Error, Result};
+
 // 1 is down, 0 is up
 const DOWN: i32 = 1;
 const UP: i32 = 0;
@@ -24,7 +26,7 @@ const KEY_RIGHTSHIFT_U16: u16 = KEY_RIGHTSHIFT as u16;
 const KEY_CAPSLOCK_U16: u16 = KEY_CAPSLOCK as u16;
 
 trait KeyMapper {
-    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device);
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) -> Result<()>;
 }
 
 pub struct KeyMaps {
@@ -153,7 +155,7 @@ impl KeyMaps {
 
 //impl KeyMapper for KeyMaps {
 impl KeyMaps {
-    pub fn send_event(&mut self, mut event: &mut input_event, device: &Device) {
+    pub fn send_event(&mut self, mut event: &mut input_event, device: &Device) -> Result<()> {
         //println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
         if event.value != 2 {
             // todo: index check here...
@@ -177,7 +179,7 @@ impl KeyMaps {
                 if new_index.is_some() {
                     self.chosen_keymap_index = *new_index.unwrap();
                     self.current_keymap_index = self.chosen_keymap_index; // todo: what if revert_default_key is held? for now ignore
-                    return; // we don't want to also send this keypress, so bail
+                    return Ok(()); // we don't want to also send this keypress, so bail
                 }
             }
             if event.code == self.revert_default_key {
@@ -189,7 +191,7 @@ impl KeyMaps {
                 }
             }
         }
-        self.keymaps[self.current_keymap_index].send_event(&self.key_state, &mut event, device);
+        self.keymaps[self.current_keymap_index].send_event(&self.key_state, &mut event, device)
     }
 }
 
@@ -239,10 +241,8 @@ impl KeyMap {
 }
 
 impl KeyMapper for KeyMap {
-    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
-        self.keymap[event.code as usize].send_event(key_state, event, device);
-        //event.code = self.keymap[event.code as usize];
-        //device.write_event(event).expect("could not write event?");
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) -> Result<()> {
+        self.keymap[event.code as usize].send_event(key_state, event, device)
     }
 }
 
@@ -275,16 +275,16 @@ impl CodeKeyMap {
 }
 
 impl KeyMapper for CodeKeyMap {
-    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
-        self.keymap[event.code as usize].send_event(key_state, event, device);
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) -> Result<()> {
+        self.keymap[event.code as usize].send_event(key_state, event, device)
     }
 }
 
-#[allow(unused_variables)]
+#[allow(unused_variables, unused_mut)]
 impl KeyMapper for u16 {
-    fn send_event(&self, key_state: &[bool], mut event: &mut input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], mut event: &mut input_event, device: &Device) -> Result<()> {
         event.code = *self;
-        device.write_event(event).expect("could not write event?");
+        device.write_event(event)
     }
 }
 
@@ -300,7 +300,7 @@ struct HalfInvertedKey {
 }
 
 impl HalfInvertedKey {
-    fn send_key(&self, key_state: &[bool], event: &mut input_event, device: &Device, left_shift: bool, right_shift: bool, caps_lock: bool) {
+    fn send_key(&self, key_state: &[bool], event: &mut input_event, device: &Device, left_shift: bool, right_shift: bool, caps_lock: bool) -> Result<()> {
         let code = self.code;
         let value = event.value;
         let mut invert_shift = self.invert_shift;
@@ -320,12 +320,12 @@ impl HalfInvertedKey {
                     event.value = DOWN;
                 }
                 //event.code.send_event(key_state, event, device);
-                device.write_event(event).expect("could not write event?");
+                device.write_event(event)?;
                 event.code = code; // not needed since u16 does it
                 event.value = value;
             }
         }
-        code.send_event(key_state, event, device);
+        code.send_event(key_state, event, device)?;
         if value == UP {
             if caps_lock && self.capslock_nomodify {
                 invert_shift = !invert_shift;
@@ -342,21 +342,22 @@ impl HalfInvertedKey {
                     event.value = UP;
                 }
                 //event.code.send_event(key_state, event, device);
-                device.write_event(event).expect("could not write event?");
+                device.write_event(event)?;
                 // neither of these are needed now...
                 event.code = code; // not needed since u16 does it
                 event.value = value;
             }
         }
+        Ok(())
     }
 }
 
 impl KeyMapper for HalfInvertedKey {
-    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) -> Result<()> {
         let left_shift = key_state[LEFTSHIFT_INDEX];
         let right_shift = key_state[RIGHTSHIFT_INDEX];
         let caps_lock = key_state[CAPSLOCK_INDEX];
-        self.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
+        self.send_key(key_state, event, device, left_shift, right_shift, caps_lock)
     }
 }
 
@@ -369,25 +370,25 @@ enum Key {
 }
 
 impl KeyMapper for Key {
-    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) {
+    fn send_event(&self, key_state: &[bool], event: &mut input_event, device: &Device) -> Result<()> {
         match *self {
             Key::Noop => {
-                device.write_event(event).expect("could not write event?");
+                device.write_event(event)
             },
             Key::Direct(code) => {
-                code.send_event(key_state, event, device);
+                code.send_event(key_state, event, device)
             },
             Key::HalfKey(ref key_half) => {
-                key_half.send_event(key_state, event, device);
+                key_half.send_event(key_state, event, device)
             },
             Key::FullKey(ref noshift_half, ref shift_half) => {
                 let left_shift = key_state[LEFTSHIFT_INDEX];
                 let right_shift = key_state[RIGHTSHIFT_INDEX];
                 let caps_lock = key_state[CAPSLOCK_INDEX];
                 if caps_lock != (left_shift || right_shift) {
-                    shift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
+                    shift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock)
                 } else {
-                    noshift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock);
+                    noshift_half.send_key(key_state, event, device, left_shift, right_shift, caps_lock)
                 }
             },
         }
@@ -407,24 +408,14 @@ pub struct KeymapConfig {
     keymaps: Vec<String>
 }
 
-/*
-‎c`p‎: no, ? converts the error with From<> in its expansion
-‎c`p‎: so unless io::Error: From<toml::Error> it isnt going to work
-c`p‎: the idea with your own error type is that MyError: From<io::Error> + From<toml::Error> + etc etc
-‎c`p‎: ie enum MyError { Io(io::Error), Toml(toml::Error), ... }
-c`p‎: error-chain does all this stuff for you
-*/
-
-use std::io::{Error, ErrorKind};
-
-fn parse_cfg<P: AsRef<Path>>(path: P) -> Result<KeymapConfig, Error> {
+fn parse_cfg<P: AsRef<Path>>(path: P) -> Result<KeymapConfig> {
     let mut f = File::open(path)?;
     let mut input = String::new();
     f.read_to_string(&mut input)?;
     //toml::from_str(&input)?
     match toml::from_str(&input) {
         Ok(toml) => Ok(toml),
-        Err(_) => Err(Error::new(ErrorKind::Other, "oh no!"))
+        Err(_) => Err(Error::NotFound) // todo: something better
     }
 }
 

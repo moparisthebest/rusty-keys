@@ -51,15 +51,17 @@ fn main() {
         let config_file = config.config_file.clone();
         let tx = tx.clone();
         thread::spawn(move || {
-            do_map(&device_file, &config_file).ok();
+            let ret = do_map(&device_file, &config_file).err();
+            if let Some(e) = ret {
+                println!("mapping for {} ended due to error: {}", device_file, e);
+            }
             tx.send(1).unwrap();
         });
     }
     // wait for all threads to finish
     let mut num_threads = config.device_files.len();
     for received in rx {
-        println!("Got: {}", received);
-        num_threads = num_threads - received;
+        num_threads -= received;
         if num_threads == 0 {
             break;
         }
@@ -86,7 +88,7 @@ fn do_map(device_file: &str, config_file: &str) -> Result<()> {
     loop {
         let mut event = input_device.read_event()?;
         if event.type_ == EV_KEY_U16 {
-            key_map.send_event(&mut event, &device);
+            key_map.send_event(&mut event, &device)?
         } else {
             device.write_event(&mut event)?
         }
