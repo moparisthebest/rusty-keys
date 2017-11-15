@@ -19,6 +19,7 @@ use std::fs::File;
 use std::io::Read;
 use std::{env, mem};
 use std::thread;
+use std::sync::mpsc;
 
 use std::os::unix::io::AsRawFd;
 
@@ -43,10 +44,12 @@ impl Config {
 fn main() {
     let config = parse_args();
     //println!("Config: {:?}", config);
+    let (tx, rx) = mpsc::channel();
 
     for device_file in config.device_files.iter() {
         let device_file = device_file.clone();
         let config_file = config.config_file.clone();
+        let tx = tx.clone();
         thread::spawn(move || {
             let key_map = KeyMaps::key_map();
             //println!("key_map: {:?}", key_map);
@@ -66,24 +69,26 @@ fn main() {
             //println!("keymaps: {:?}", keymaps);
 
             loop {
-                let mut event = input_device.read_event();
+                let mut event = if let Ok(e) = input_device.read_event() { e } else { break };
                 if event.type_ == EV_KEY_U16 {
                     key_map.send_event(&mut event, &device);
-                    /*
-                        println!("type: {} code: {}", event.type_, event.code);
-                        if event.code == KEY_A as u16 {
-                            event.code = KEY_B as u16;
-                        }
-                        */
                 } else {
-                    device.write_event(&mut event).expect("could not write event?");
+                    if device.write_event(&mut event).is_err() {
+                        break;
+                    }
                 }
             }
+            tx.send(1).unwrap();
         });
     }
     // wait for all threads to finish
-    loop {
-        thread::sleep(std::time::Duration::from_secs(u64::max_value()));
+    let mut num_threads = config.device_files.len();
+    for received in rx {
+        println!("Got: {}", received);
+        num_threads = num_threads - received;
+        if num_threads == 0 {
+            break;
+        }
     }
 }
 
@@ -126,10 +131,7 @@ fn parse_args() -> Config {
 // the fact that all device information is shown in /proc/bus/input/devices and
 // the keyboard device file should always have an EV of 120013
 fn get_keyboard_device_filenames() -> Vec<String> {
-    let mut command_str = "grep -E 'Handlers|EV' /proc/bus/input/devices".to_string();
-    command_str.push_str("| grep -B1 120013");
-    command_str.push_str("| grep -Eo event[0-9]+");
-
+    let command_str = "grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+".to_string();
     let res = Command::new("sh").arg("-c").arg(command_str).output().unwrap_or_else(|e| {
         panic!("{}", e);
     });
@@ -156,6 +158,12 @@ struct InputDevice {
     buf: [u8; SIZE_OF_INPUT_EVENT],
 }
 
+#[cfg(feature = "udev")]
+extern crate libudev as udev;
+mod error;
+pub use error::Error;
+type Result<T> = ::std::result::Result<T, Error>;
+
 impl InputDevice {
     pub fn open(device_file: &str) -> Self {
         let device_file = File::open(device_file).unwrap_or_else(|e| panic!("{}", e));
@@ -165,13 +173,13 @@ impl InputDevice {
         }
     }
 
-    pub fn read_event(&mut self) -> input_event {
-        let num_bytes = self.device_file.read(&mut self.buf).unwrap_or_else(|e| panic!("{}", e));
+    pub fn read_event(&mut self) -> Result<input_event> {
+        let num_bytes = self.device_file.read(&mut self.buf)?;
         if num_bytes != SIZE_OF_INPUT_EVENT {
-            panic!("Error while reading from device file");
+            return Err(Error::ShortRead);
         }
         let event: input_event = unsafe { mem::transmute(self.buf) };
-        event
+        Ok(event)
     }
 
     pub fn grab(&mut self) {
@@ -180,16 +188,17 @@ impl InputDevice {
         }
     }
 
-    pub fn release(&mut self) {
+    pub fn release(&mut self) -> Result<()> {
         unsafe {
-            eviocgrab(self.device_file.as_raw_fd(), 0 as *const c_int).expect("no release?");
+            eviocgrab(self.device_file.as_raw_fd(), 0 as *const c_int)?;
         }
+        Ok(())
     }
 }
 
 impl Drop for InputDevice {
     fn drop(&mut self) {
-        self.release();
+        self.release().ok();
     }
 }
 

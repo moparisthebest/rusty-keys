@@ -1,6 +1,7 @@
 use std::fmt;
 use std::error;
 use std::ffi;
+use std::io;
 use nix;
 
 #[cfg(feature = "udev")]
@@ -19,8 +20,13 @@ pub enum Error {
 	/// Errors coming from udev.
 	Udev(udev::Error),
 
+	Io(io::Error),
+
 	/// The uinput file could not be found.
 	NotFound,
+
+	/// error reading input_event
+	ShortRead,
 }
 
 impl From<ffi::NulError> for Error {
@@ -39,6 +45,12 @@ impl From<nix::Error> for Error {
 impl From<udev::Error> for Error {
 	fn from(value: udev::Error) -> Self {
 		Error::Udev(value)
+	}
+}
+
+impl From<io::Error> for Error {
+	fn from(value: io::Error) -> Self {
+		Error::Io(value)
 	}
 }
 
@@ -61,8 +73,14 @@ impl error::Error for Error {
 			&Error::Udev(ref err) =>
 				err.description(),
 
+			&Error::Io(ref err) =>
+				err.description(),
+
 			&Error::NotFound =>
 				"Device not found.",
+
+			&Error::ShortRead =>
+				"Error while reading from device file.",
 		}
 	}
 }
