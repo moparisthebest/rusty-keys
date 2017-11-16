@@ -41,18 +41,18 @@ pub struct KeyMaps {
     current_keymap_index: usize,
 }
 
-fn parse_key(key_map: &HashMap<&'static str, *const c_int>, key: &str) -> u16 {
+fn parse_key(key_map: &HashMap<&'static str, c_int>, key: &str) -> u16 {
     match key_map.get(key.trim_matches(|c: char| c.is_whitespace() || c == INVERT_KEY_FLAG || c == CAPS_MODIFY_KEY_FLAG)) {
         Some(key_code) => *key_code as u16,
         None => panic!("unknown key: {}", key.trim())
     }
 }
 
-fn parse_keymap_numeric(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<u16> {
+fn parse_keymap_numeric(key_map: &HashMap<&'static str, c_int>, keymap: &str) -> Vec<u16> {
     keymap.split(",").map(|k| parse_key(key_map, k)).collect()
 }
 
-fn parse_key_half_inverted(key_map: &HashMap<&'static str, *const c_int>, key: &str) -> HalfInvertedKey {
+fn parse_key_half_inverted(key_map: &HashMap<&'static str, c_int>, key: &str) -> HalfInvertedKey {
     HalfInvertedKey {
         code: parse_key(key_map, key),
         invert_shift: key.contains(INVERT_KEY_FLAG),
@@ -61,12 +61,12 @@ fn parse_key_half_inverted(key_map: &HashMap<&'static str, *const c_int>, key: &
 }
 
 // maybe shortcut to this if not contains * or :
-fn parse_keymap_u16(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<u16> {
+fn parse_keymap_u16(key_map: &HashMap<&'static str, c_int>, keymap: &str) -> Vec<u16> {
     keymap.split(",").map(|k| parse_key(key_map, k)).collect()
 }
 
 // todo: how do I return an iterator here instead of .collect to Vec?
-fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> Vec<Key> {
+fn parse_keymap(key_map: &HashMap<&'static str, c_int>, keymap: &str) -> Vec<Key> {
     keymap.split(",").map(|k| {
         let ret: Key = if k.contains(HALF_KEY_SEPARATOR) {
             let keys: Vec<&str> = k.split(HALF_KEY_SEPARATOR).collect();
@@ -86,12 +86,12 @@ fn parse_keymap(key_map: &HashMap<&'static str, *const c_int>, keymap: &str) -> 
 }
 
 impl KeyMaps {
-    pub fn from_cfg<P: AsRef<Path>>(key_map: &HashMap<&'static str, *const c_int>, path: P) -> KeyMaps {
+    pub fn from_cfg<P: AsRef<Path>>(key_map: &HashMap<&'static str, c_int>, path: P) -> KeyMaps {
         let key_map_config = parse_cfg(path).expect("provided config cannot be found/parsed");
         KeyMaps::new(key_map, key_map_config)
     }
 
-    pub fn new(key_map: &HashMap<&'static str, *const c_int>, config: KeymapConfig) -> KeyMaps {
+    pub fn new(key_map: &HashMap<&'static str, c_int>, config: KeymapConfig) -> KeyMaps {
         if config.keymaps.len() < 2 {
             panic!("must have at least 2 keymaps (original and mapped) but only have {},", config.keymaps.len());
         }
@@ -420,7 +420,7 @@ fn parse_cfg<P: AsRef<Path>>(path: P) -> Result<KeymapConfig> {
 }
 
 impl KeyMaps {
-    pub fn key_map() -> HashMap<&'static str, *const c_int> {
+    pub fn key_map() -> HashMap<&'static str, c_int> {
         [
             // generated like:
             // grep -o 'KEY_[^ :;]*' ~/.cargo/registry/src/github.com-1ecc6299db9ec823/uinput-sys-0.1.3/src/events.rs | sed 's/^KEY_//' | awk '{print "(\""$1"\", KEY_"$1"),"}'
@@ -728,6 +728,6 @@ impl KeyMaps {
             ("P0", KEY_KP0),
             ("PDOT", KEY_KPDOT),
             ("PENT", KEY_KPENTER),
-        ].iter().cloned().map(|(m, v)| (m, v as *const c_int)).collect()
+        ].iter().cloned().map(|(m, v)| (m, v)).collect()
     }
 }

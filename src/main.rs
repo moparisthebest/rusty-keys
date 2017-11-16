@@ -20,7 +20,8 @@ use std::fs::File;
 use std::io::Read;
 use std::{env, mem};
 use std::thread;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
+use std::collections::HashMap;
 
 use std::os::unix::io::AsRawFd;
 
@@ -52,6 +53,9 @@ fn main() {
     let config = parse_args();
     //println!("Config: {:?}", config);
 
+    let key_map = Arc::new(KeyMaps::key_map());
+    //println!("key_map: {:?}", key_map);
+
     if config.device_files.len() > 0 {
         // we only want to operate on device files sent in then quit
         let (tx, rx) = mpsc::channel();
@@ -60,8 +64,9 @@ fn main() {
             let device_file = device_file.clone();
             let config_file = config.config_file.clone();
             let tx = tx.clone();
+            let key_map = Arc::clone(&key_map);
             thread::spawn(move || {
-                let ret = spawn_map_thread(&device_file, &config_file);
+                let ret = spawn_map_thread(key_map, &device_file, &config_file);
                 if let Err(e) = ret {
                     println!("mapping for {} ended due to error: {}", device_file, e);
                 }
@@ -85,7 +90,7 @@ fn main() {
         let device_files = get_keyboard_device_filenames();
         println!("Detected devices: {:?}", device_files);
         for device_file in device_files.iter() {
-            inotify_spawn_thread(device_file, config.config_file.clone());
+            inotify_spawn_thread(&key_map, device_file, config.config_file.clone());
         }
 
         let mut buffer = [0u8; 4096];
@@ -95,16 +100,14 @@ fn main() {
             if let Ok(events) = events {
                 for event in events {
                     if !event.mask.contains(EventMask::ISDIR) {
-                        if let Some(name) = event.name {
-                            if let Some(device_file) = name.to_str() {
-                                // check if this is an eligible keyboard device
-                                let device_files = get_keyboard_device_filenames();
-                                if !device_files.contains(&device_file.to_string()) {
-                                    continue;
-                                }
-                                println!("starting mapping thread for: {}", device_file);
-                                inotify_spawn_thread(device_file.clone(), config.config_file.clone());
+                        if let Some(device_file) = event.name.and_then(|name|name.to_str()) {
+                            // check if this is an eligible keyboard device
+                            let device_files = get_keyboard_device_filenames();
+                            if !device_files.contains(&device_file.to_string()) {
+                                continue;
                             }
+                            println!("starting mapping thread for: {}", device_file);
+                            inotify_spawn_thread(&key_map, device_file.clone(), config.config_file.clone());
                         }
                     }
                 }
@@ -113,23 +116,21 @@ fn main() {
     }
 }
 
-fn inotify_spawn_thread(device_file: &str, config_file: String) {
+fn inotify_spawn_thread(key_map: &Arc<HashMap<&'static str, c_int>>, device_file: &str, config_file: String) {
     let mut filename = "/dev/input/".to_string();
     filename.push_str(&device_file);
+    let key_map = Arc::clone(&key_map);
     thread::spawn(move || {
-        let ret = spawn_map_thread(&filename, &config_file);
+        let ret = spawn_map_thread(key_map, &filename, &config_file);
         if let Err(e) = ret {
             println!("mapping for {} ended due to error: {}", filename, e);
         }
     });
 }
 
-fn spawn_map_thread(device_file: &str, config_file: &str) -> Result<()> {
+fn spawn_map_thread(key_map: Arc<HashMap<&'static str, c_int>>, device_file: &str, config_file: &str) -> Result<()> {
     let mut input_device = InputDevice::open(device_file)?;
     input_device.grab()?;
-
-    let key_map = KeyMaps::key_map();
-    //println!("key_map: {:?}", key_map);
 
     let device = rusty_keys::open("/dev/uinput")
         .or_else(|_| rusty_keys::open("/dev/input/uinput"))

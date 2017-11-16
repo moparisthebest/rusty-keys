@@ -88,7 +88,7 @@ impl Builder {
 		self
 	}
 
-	pub fn event(mut self, key_codes: Values<&str, *const c_int>) -> Res<Self> {
+	pub fn event(mut self, key_codes: Values<&str, c_int>) -> Res<Self> {
 		self.abs = None;
 		//let test_ev_key : c_int = EV_KEY as c_int;
 		unsafe {
@@ -97,7 +97,7 @@ impl Builder {
 			ui_set_evbit(self.fd, EV_KEY as *const c_int)?;
 			//ui_set_keybit(self.fd, KEY_H as *const c_int)?;
 			for key_code in key_codes {
-				ui_set_keybit(self.fd, *key_code)?;
+				ui_set_keybit(self.fd, *key_code as *const c_int)?;
 			}
 			//try!(ui_set_keybit(self.fd, &KEY_H));
 		}
