@@ -2,10 +2,13 @@ use std::fmt;
 use std::error;
 use std::ffi;
 use std::io;
+use std::sync::mpsc;
 use nix;
 
 #[cfg(feature = "udev")]
 use udev;
+
+use libc;
 
 /// UInput error.
 #[derive(Debug)]
@@ -21,6 +24,8 @@ pub enum Error {
 	Udev(udev::Error),
 
 	Io(io::Error),
+
+	Send(mpsc::SendError<libc::input_event>),
 
 	/// The uinput file could not be found.
 	NotFound,
@@ -54,6 +59,12 @@ impl From<io::Error> for Error {
 	}
 }
 
+impl From<mpsc::SendError<libc::input_event>> for Error {
+	fn from(value: mpsc::SendError<libc::input_event>) -> Self {
+		Error::Send(value)
+	}
+}
+
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		f.write_str(error::Error::description(self))
@@ -74,6 +85,9 @@ impl error::Error for Error {
 				err.description(),
 
 			&Error::Io(ref err) =>
+				err.description(),
+
+			&Error::Send(ref err) =>
 				err.description(),
 
 			&Error::NotFound =>
