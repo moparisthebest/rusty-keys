@@ -61,11 +61,11 @@ fn main() {
             let config_file = config.config_file.clone();
             let tx = tx.clone();
             thread::spawn(move || {
-                let ret = do_map(&device_file, &config_file).err();
-                if let Some(e) = ret {
+                let ret = spawn_map_thread(&device_file, &config_file);
+                if let Err(e) = ret {
                     println!("mapping for {} ended due to error: {}", device_file, e);
                 }
-                tx.send(1).unwrap();
+                tx.send(1).ok();
             });
         }
         // wait for all threads to finish
@@ -85,44 +85,27 @@ fn main() {
         let device_files = get_keyboard_device_filenames();
         println!("Detected devices: {:?}", device_files);
         for device_file in device_files.iter() {
-            let device_file = device_file.clone();
-            let mut filename = "/dev/input/".to_string();
-            filename.push_str(&device_file);
-            let config_file = config.config_file.clone();
-            thread::spawn(move || {
-                let ret = do_map(&filename, &config_file).err();
-                if let Some(e) = ret {
-                    println!("mapping for {} ended due to error: {}", filename, e);
-                }
-            });
+            inotify_spawn_thread(device_file, config.config_file.clone());
         }
 
         let mut buffer = [0u8; 4096];
         loop {
-            let events = inotify.read_events_blocking(&mut buffer).expect("Failed to read inotify events");
+            let events = inotify.read_events_blocking(&mut buffer);
 
-            for event in events {
-                if !event.mask.contains(EventMask::ISDIR) && event.name.is_some() {
-                    println!("File created: {:?}", event.name);
-                    if let Some(device_file) = event.name.unwrap().to_str() {
-                        // check if this is an eligible keyboard device
-                        let device_files = get_keyboard_device_filenames();
-                        if !device_files.contains(&device_file.to_string()) {
-                            continue;
-                        }
-                        println!("starting mapping thread for: {}", device_file);
-                        // todo: same as loop above, re-factor
-                        let device_file = device_file.clone();
-                        let mut filename = "/dev/input/".to_string();
-                        filename.push_str(&device_file);
-                        let config_file = config.config_file.clone();
-                        thread::spawn(move || {
-                            let ret = do_map(&filename, &config_file).err();
-                            if let Some(e) = ret {
-                                println!("mapping for {} ended due to error: {}", filename, e);
+            if let Ok(events) = events {
+                for event in events {
+                    if !event.mask.contains(EventMask::ISDIR) {
+                        if let Some(name) = event.name {
+                            if let Some(device_file) = name.to_str() {
+                                // check if this is an eligible keyboard device
+                                let device_files = get_keyboard_device_filenames();
+                                if !device_files.contains(&device_file.to_string()) {
+                                    continue;
+                                }
+                                println!("starting mapping thread for: {}", device_file);
+                                inotify_spawn_thread(device_file.clone(), config.config_file.clone());
                             }
-                        });
-                        // todo: end same as
+                        }
                     }
                 }
             }
@@ -130,7 +113,18 @@ fn main() {
     }
 }
 
-fn do_map(device_file: &str, config_file: &str) -> Result<()> {
+fn inotify_spawn_thread(device_file: &str, config_file: String) {
+    let mut filename = "/dev/input/".to_string();
+    filename.push_str(&device_file);
+    thread::spawn(move || {
+        let ret = spawn_map_thread(&filename, &config_file);
+        if let Err(e) = ret {
+            println!("mapping for {} ended due to error: {}", filename, e);
+        }
+    });
+}
+
+fn spawn_map_thread(device_file: &str, config_file: &str) -> Result<()> {
     let mut input_device = InputDevice::open(device_file)?;
     input_device.grab()?;
 
@@ -186,7 +180,7 @@ fn parse_args() -> Config {
         exit(0);
     }
 
-    let config_file = matches.opt_str("c").unwrap_or("keymap.toml".to_owned());
+    let config_file = matches.opt_str("c").unwrap_or("/etc/rusty-keys/keymap.toml".to_owned());
 
     Config::new(matches.free, config_file)
 }
