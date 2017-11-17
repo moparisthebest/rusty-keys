@@ -7,19 +7,14 @@ extern crate inotify;
 #[macro_use]
 extern crate nix;
 
-use rusty_keys::KeyMaps;
+use rusty_keys::{KeyMaps, Device};
 
 use ffi::*;
 use libc::{c_int, input_event};
-
-//use std::thread;
-//use std::time::Duration;
-
 use std::process::{exit, Command};
 use std::fs::File;
 use std::io::Read;
-use std::{env, mem};
-use std::thread;
+use std::{env, mem, thread};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
@@ -70,64 +65,81 @@ fn main_res() -> Result<()> {
     let mut key_map = KeyMaps::from_cfg(&key_map, &config.config_file);
     //println!("keymaps: {:?}", keymaps);
 
-    let (tx, rx) = mpsc::channel();
+    if config.device_files.len() == 1 {
+        // shortcut, don't bother with threads
+        let mut input_device = InputDevice::open(&config.device_files[0])?;
+        input_device.grab()?;
 
-    if config.device_files.len() > 0 {
-        // we only want to operate on device files sent in then quit
-        for device_file in config.device_files.iter() {
-            let device_file = device_file.clone();
-            let tx = tx.clone();
-            thread::spawn(move || {
-                let ret = spawn_map_thread(tx, &device_file);
-                if let Err(e) = ret {
-                    println!("mapping for {} ended due to error: {}", device_file, e);
-                }
-            });
+        loop {
+            let event = input_device.read_event()?;
+            send_event(&mut key_map, event, &device)?
         }
     } else {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            // we want to wait forever starting new threads for any new keyboard devices
-            let mut inotify = Inotify::init().expect("Failed to initialize inotify");
+        // start up some intra thread communication
+        let (tx, rx) = mpsc::channel();
 
-            inotify.add_watch("/dev/input/", WatchMask::CREATE).expect("Failed to add inotify watch");
-
-            let device_files = get_keyboard_device_filenames();
-            println!("Detected devices: {:?}", device_files);
-            for device_file in device_files.iter() {
-                inotify_spawn_thread(&tx, device_file);
+        if config.device_files.len() > 0 {
+            // we only want to operate on device files sent in then quit
+            for device_file in config.device_files.iter() {
+                let device_file = device_file.clone();
+                let tx = tx.clone();
+                thread::spawn(move || {
+                    let ret = spawn_map_thread(tx, &device_file);
+                    if let Err(e) = ret {
+                        println!("mapping for {} ended due to error: {}", device_file, e);
+                    }
+                });
             }
+        } else {
+            let tx = tx.clone();
+            thread::spawn(move || {
+                // we want to wait forever starting new threads for any new keyboard devices
+                let mut inotify = Inotify::init().expect("Failed to initialize inotify");
 
-            let mut buffer = [0u8; 4096];
-            loop {
-                let events = inotify.read_events_blocking(&mut buffer);
+                inotify.add_watch("/dev/input/", WatchMask::CREATE).expect("Failed to add inotify watch");
 
-                if let Ok(events) = events {
-                    for event in events {
-                        if !event.mask.contains(EventMask::ISDIR) {
-                            if let Some(device_file) = event.name.and_then(|name|name.to_str()) {
-                                // check if this is an eligible keyboard device
-                                let device_files = get_keyboard_device_filenames();
-                                if !device_files.contains(&device_file.to_string()) {
-                                    continue;
+                let device_files = get_keyboard_device_filenames();
+                println!("Detected devices: {:?}", device_files);
+                for device_file in device_files.iter() {
+                    inotify_spawn_thread(&tx, device_file);
+                }
+
+                let mut buffer = [0u8; 4096];
+                loop {
+                    let events = inotify.read_events_blocking(&mut buffer);
+
+                    if let Ok(events) = events {
+                        for event in events {
+                            if !event.mask.contains(EventMask::ISDIR) {
+                                if let Some(device_file) = event.name.and_then(|name|name.to_str()) {
+                                    // check if this is an eligible keyboard device
+                                    let device_files = get_keyboard_device_filenames();
+                                    if !device_files.contains(&device_file.to_string()) {
+                                        continue;
+                                    }
+                                    println!("starting mapping thread for: {}", device_file);
+                                    inotify_spawn_thread(&tx, device_file.clone());
                                 }
-                                println!("starting mapping thread for: {}", device_file);
-                                inotify_spawn_thread(&tx, device_file.clone());
                             }
                         }
                     }
                 }
-            }
-        });
-    }
-    drop(tx); // drop our last one, so when the threads finish, everything stops
-    // process all events
-    for mut event in rx {
-        if event.type_ == EV_KEY_U16 {
-            key_map.send_event(&mut event, &device)?
-        } else {
-            device.write_event(&mut event)?
+            });
         }
+        drop(tx); // drop our last one, so when the threads finish, everything stops
+        // process all events
+        for event in rx {
+            send_event(&mut key_map, event, &device)?
+        }
+    }
+    Ok(())
+}
+
+fn send_event(key_map: &mut KeyMaps, mut event: input_event, device: &Device) -> Result<()> {
+    if event.type_ == EV_KEY_U16 {
+        key_map.send_event(&mut event, &device)?
+    } else {
+        device.write_event(&mut event)?
     }
     Ok(())
 }
