@@ -1,6 +1,5 @@
 use std::{mem, ptr, slice};
-use libc::c_int;
-use libc::{timeval, gettimeofday, input_event};
+use libc::{timeval, gettimeofday, input_event, c_int};
 use nix::unistd;
 use ffi::*;
 use {Result as Res};

@@ -4,6 +4,7 @@ extern crate libc;
 
 extern crate uinput_sys as ffi;
 
+#[macro_use]
 extern crate nix;
 
 #[macro_use]
@@ -23,7 +24,7 @@ pub mod keymapper;
 pub use keymapper::KeyMaps;
 
 pub mod device;
-pub use device::Device;
+pub use device::{Device,InputDevice};
 
 /// Open the default uinput device.
 pub fn default() -> Result<device::Builder> {
