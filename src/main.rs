@@ -173,7 +173,7 @@ fn parse_args() -> Config {
     let mut opts = Options::new();
     opts.optflag("h", "help", "prints this help message");
     opts.optflag("v", "version", "prints the version");
-    opts.optopt("c", "config", "specify the keymap config file to use", "FILE");
+    opts.optopt("c", "config", "specify the keymap config file to use (default: /etc/rusty-keys/keymap.toml)", "FILE");
 
     let matches = opts.parse(&args[1..]);
     if matches.is_err() {

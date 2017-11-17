@@ -7,15 +7,15 @@ This is the only keymapper I am aware of capable of implementing this layout:
 
 The Problem
 -----------
-If you ever have mapped keys on linux, you know that there is the console keymap (loadkeys) and the X keymap (setxkbmap)
+If you ever have mapped keys on linux, you know that there is the console keymap (loadkeys) and the X keymap (setxkbmap),
 also things like SDL and Virtualbox grab the input directly and respect no maps.  Lastly I want to revert to QWERTY when
 holding ctrl so ctrl+c works just like normal, without remapping all programs to ctrl+j.  Linux keymaps cannot do this either.
 
 The Solution
 ------------
 1. Grab a keyboard device directly so only we can read events from it.
-2. Create a new keyboard input device with uinput, this is identical to any other keyboard device to anything running on the box.
-3. Read input_events from real device, map them, send them to our created device.
+2. Create a new keyboard input device with uinput, this looks identical to any other keyboard device to anything running on the box.
+3. Read input_events from the real device, map them, send them to our created device.
 
 This solution is what rusty-keys implements, it works in ttys, in X, in virtualbox even running windows or whatever,
 on SDL games, it will work literally everywhere, because rusty-keys just creates a regular keyboard.
@@ -23,37 +23,32 @@ on SDL games, it will work literally everywhere, because rusty-keys just creates
 How to run
 ----------
 
-When ran, it will read a keymap.toml file from your current working directory, refer to example and tweak to suit.
+When ran, it will read a keymap.toml configuration file, refer to example and tweak to suit.
 
 ```
-Usage: rusty-keys [options]
+Usage: rusty-keys [options] [device_files...]
 
 Options:
     -h, --help          prints this help message
     -v, --version       prints the version
-    -d, --device DEVICE specify the keyboard input device file
-    -c, --config FILE   specify the keymap config file to use
+    -c, --config FILE   specify the keymap config file to use (default:
+                        /etc/rusty-keys/keymap.toml)
+
 ```
 
-with only one keyboard attached:  
+when ran without specifying input devices, it maps all currently connected keyboards, and watches /dev/input/ with
+inotify and starts mapping any new keyboards that are plugged in forever, until you kill it:
 `rusty-keys`
 
-with multiple keyboards, currently you must specify one:  
-`rusty-keys -d /dev/input/event0`
+or you can specify one or multiple input devices, and it will run until all are disconnected, then stop:  
+`rusty-keys /dev/input/event0` or `rusty-keys /dev/input/event0 /dev/input/event2`
 
-find all eligible keyboard devices like:  
-`grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+`
-
-For using the systemd unit with by-id or by-path:
-```
-$ systemd-escape --template=rusty-keys@.service by-id/usb-04c8_USB_Keyboard-event-kbd
-rusty-keys@by\x2did-usb\x2d04c8_USB_Keyboard\x2devent\x2dkbd.service
-```
+An example systemd service is in systemd/rusty-keys.service, enable it to have mapped keyboards all the time.
 
 How to install
 --------------
  * `cargo install rusty-keys`  
- * Arch Linux [AUR PKGBUILD](https://aur.archlinux.org/packages/rusty-keys/)
+ * Arch Linux [rusty-keys](https://aur.archlinux.org/packages/rusty-keys/) [rusty-keys-git](https://aur.archlinux.org/packages/rusty-keys-git/)
 
 License
 -------
