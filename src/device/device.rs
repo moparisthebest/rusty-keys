@@ -18,7 +18,7 @@ impl Device {
 	}
 
 	#[doc(hidden)]
-	pub fn write(&mut self, kind: c_int, code: c_int, value: c_int) -> Res<()> {
+	pub fn write(&self, kind: c_int, code: c_int, value: c_int) -> Res<()> {
 		let mut event = input_event {
 			time:  timeval { tv_sec: 0, tv_usec: 0 },
 			type_:  kind as u16,
@@ -44,27 +44,27 @@ impl Device {
 	}
 
 	/// Synchronize the device.
-	pub fn synchronize(&mut self) -> Res<()> {
+	pub fn synchronize(&self) -> Res<()> {
 		self.write(EV_SYN, SYN_REPORT, 0)
 	}
 
 	/// Send an event.
-	pub fn send(&mut self, kind: c_int, code: c_int, value: i32) -> Res<()> {
+	pub fn send(&self, kind: c_int, code: c_int, value: i32) -> Res<()> {
 		self.write(kind, code, value)
 	}
 
 	/// Send a press event.
-	pub fn press(&mut self, kind: c_int, code: c_int) -> Res<()> {
+	pub fn press(&self, kind: c_int, code: c_int) -> Res<()> {
 		self.write(kind, code, 1)
 	}
 
 	/// Send a release event.
-	pub fn release(&mut self, kind: c_int, code: c_int) -> Res<()> {
+	pub fn release(&self, kind: c_int, code: c_int) -> Res<()> {
 		self.write(kind, code, 0)
 	}
 
 	/// Send a press and release event.
-	pub fn click(&mut self, kind: c_int, code: c_int) -> Res<()> {
+	pub fn click(&self, kind: c_int, code: c_int) -> Res<()> {
 		try!(self.press(kind, code));
 		try!(self.release(kind, code));
 
@@ -72,7 +72,7 @@ impl Device {
 	}
 
 	/// Send a relative or absolute positioning event.
-	pub fn position(&mut self, kind: c_int, code: c_int, value: i32) -> Res<()> {
+	pub fn position(&self, kind: c_int, code: c_int, value: i32) -> Res<()> {
 		self.write(kind, code, value)
 	}
 }

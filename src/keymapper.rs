@@ -321,6 +321,8 @@ impl HalfInvertedKey {
                 }
                 //event.code.send_event(key_state, event, device);
                 device.write_event(event)?;
+                // SYN_REPORT after, then key, then key's SYN_REPORT
+                device.synchronize()?;
                 event.code = code; // not needed since u16 does it
                 event.value = value;
             }
@@ -342,6 +344,8 @@ impl HalfInvertedKey {
                     event.value = UP;
                 }
                 //event.code.send_event(key_state, event, device);
+                // SYN_REPORT first after key, then shift, then key's SYN_REPORT which will be used for shift's
+                device.synchronize()?;
                 device.write_event(event)?;
                 // neither of these are needed now...
                 event.code = code; // not needed since u16 does it

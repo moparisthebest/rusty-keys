@@ -1,0 +1,40 @@
+After all these years of this technique working perfectly, libinput goes and breaks it (along with apparantly many other things):
+
+https://bugs.freedesktop.org/show_bug.cgi?id=104030
+
+A normal USB keyboard pressing shift+3:
+
+E: 0.000001 0004 0004 458977    # EV_MSC / MSC_SCAN             458977
+E: 0.000001 0001 002a 0001      # EV_KEY / KEY_LEFTSHIFT        1
+E: 0.000001 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +0ms
+E: 0.151990 0004 0004 458784    # EV_MSC / MSC_SCAN             458784
+E: 0.151990 0001 0004 0001      # EV_KEY / KEY_3                1
+E: 0.151990 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +151ms
+#E: 0.327930 0004 0004 458784   # EV_MSC / MSC_SCAN             458784
+E: 0.327930 0001 0004 0000      # EV_KEY / KEY_3                0
+E: 0.327930 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +176ms
+E: 0.400020 0004 0004 458977    # EV_MSC / MSC_SCAN             458977
+E: 0.400020 0001 002a 0000      # EV_KEY / KEY_LEFTSHIFT        0
+E: 0.400020 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +73ms
+
+rusty-keys pre SYN_REPORT fix:
+
+E: 0.000001 0001 002a 0001      # EV_KEY / KEY_LEFTSHIFT        1
+E: 0.000001 0001 001a 0001      # EV_KEY / KEY_LEFTBRACE        1
+E: 0.000001 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +0ms
+{E: 0.031945 0001 001a 0000     # EV_KEY / KEY_LEFTBRACE        0
+E: 0.031945 0001 002a 0000      # EV_KEY / KEY_LEFTSHIFT        0
+E: 0.031945 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +31ms
+
+rusty-keys post SYN_REPORT fix:
+
+E: 0.000001 0001 002a 0001      # EV_KEY / KEY_LEFTSHIFT        1
+E: 0.000001 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +0ms
+E: 0.000032 0001 001a 0001      # EV_KEY / KEY_LEFTBRACE        1
+E: 0.000032 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +0ms
+{E: 0.096031 0001 001a 0000     # EV_KEY / KEY_LEFTBRACE        0
+E: 0.096031 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +96ms
+E: 0.096091 0001 002a 0000      # EV_KEY / KEY_LEFTSHIFT        0
+E: 0.096091 0000 0000 0000      # ------------ SYN_REPORT (0) ---------- +0ms
+
+Seems to be good enough for now...
