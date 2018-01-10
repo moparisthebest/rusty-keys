@@ -8,7 +8,7 @@ use rusty_keys::{KeyMaps, Device, InputDevice, Result};
 
 use ffi::*;
 use libc::input_event;
-use std::process::{exit, Command};
+use std::process::exit;
 use std::{env, thread};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
@@ -199,18 +199,32 @@ fn parse_args() -> Config {
 // Detects and returns the name of the keyboard device file. This function uses
 // the fact that all device information is shown in /proc/bus/input/devices and
 // the keyboard device file should always have an EV of 120013
+// grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+
 fn get_keyboard_device_filenames() -> Vec<String> {
-    let command_str = "grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+".to_string();
-    let res = Command::new("sh").arg("-c").arg(command_str).output();
-    if res.is_err() {
+    use std::io::BufReader;
+    use std::io::prelude::*;
+    use std::fs::File;
+
+    let f = File::open("/proc/bus/input/devices");
+    if f.is_err() {
         return Vec::new();
     }
-    let res = res.unwrap();
-    let res_str = std::str::from_utf8(&res.stdout).unwrap_or("");
-
+    let f = BufReader::new(f.unwrap());
+    let mut filename = None;
     let mut filenames = Vec::new();
-    for file in res_str.trim().split('\n') {
-        filenames.push(file.to_string());
+    for line in f.lines() {
+        if let Ok(line) = line {
+            if line.starts_with("H: Handlers=") {
+                if let Some(event_index) = line.find("event") {
+                    let last_index = line[event_index..line.len()-1].find(" ").and_then(|i| Some(i + event_index)).unwrap_or(line.len() - 1);
+                    filename = Some(line[event_index..last_index].to_owned());
+                }
+            } else if line == "B: EV=120013" {
+                if let Some(filename) = filename.clone() {
+                    filenames.push(filename);
+                }
+            }
+        }
     }
     filenames
 }
