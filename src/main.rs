@@ -219,9 +219,9 @@ fn get_keyboard_device_filenames() -> Vec<String> {
                     let last_index = line[event_index..line.len()-1].find(" ").and_then(|i| Some(i + event_index)).unwrap_or(line.len() - 1);
                     filename = Some(line[event_index..last_index].to_owned());
                 }
-            } else if line == "B: EV=120013" {
-                if let Some(filename) = filename.clone() {
-                    filenames.push(filename);
+            } else if line.starts_with("B: EV=") && line.contains("120013") {
+                if let Some(ref filename) = filename {
+                    filenames.push(filename.clone());
                 }
             }
         }
