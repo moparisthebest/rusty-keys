@@ -1,6 +1,6 @@
 [package]
 name    = "rusty-keys"
-version = "0.0.2"
+version = "0.0.3"
 
 authors = ["moparisthebest <admin@moparisthebest.com>"]
 license = "AGPL-3.0"
@@ -9,14 +9,19 @@ description = "Linux keyboard mapper"
 repository  = "https://code.moparisthebest.com/moparisthebest/rusty-keys"
 keywords    = ["linux", "input", "keyboard", "keymapper"]
 
-exclude = [
-    "keymap.orig.toml",
+include = [
+    "src/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "keymap.toml",
+    "LICENSE.md",
+    "README.md",
 ]
 
 [dependencies]
-libc         = "0.2"
-nix          = "0.5"
-uinput-sys   = "0.1"
+libc         = "0.2.30"
+nix          = "0.5.1"
+uinput-sys   = "0.1.3"
 getopts      = "0.2.15"
 toml         = "0.4.5"
 serde_derive = "1.0.11"
@@ -25,7 +30,7 @@ inotify      = "0.5.0"
 
 [dependencies.libudev]
 optional = true
-version  = "0.2"
+version  = "0.2.0"
 
 [features]
 default = ["udev"]
