@@ -1,6 +1,6 @@
 use std::{mem, ptr, slice};
 use libc::{timeval, gettimeofday, input_event, c_int};
-use nix::unistd;
+use nix::{unistd, errno::Errno};
 use ffi::*;
 use {Result as Res};
 
@@ -80,7 +80,7 @@ impl Device {
 impl Drop for Device {
 	fn drop(&mut self) {
 		unsafe {
-			ui_dev_destroy(self.fd).unwrap();
+			Errno::result(ui_dev_destroy(self.fd)).unwrap();
 		}
 	}
 }

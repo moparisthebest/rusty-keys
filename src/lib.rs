@@ -10,9 +10,6 @@ extern crate nix;
 #[macro_use]
 extern crate serde_derive;
 
-#[cfg(feature = "udev")]
-extern crate libudev as udev;
-
 use std::path::Path;
 
 mod error;

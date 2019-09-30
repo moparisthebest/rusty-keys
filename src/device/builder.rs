@@ -2,10 +2,10 @@ use std::path::Path;
 use std::{mem, slice};
 use std::ffi::CString;
 use libc::c_int;
-use nix::{self, fcntl, unistd};
+use nix::{self, fcntl, unistd, errno::Errno};
 use nix::sys::stat;
 use ffi::*;
-use {Result as Res, Error, Device};
+use {Result as Res, Device};
 use std::collections::hash_map::Values;
 
 #[cfg(feature = "udev")]
@@ -22,7 +22,7 @@ impl Builder {
 	/// Create a builder from the specified path.
 	pub fn open<P: AsRef<Path>>(path: P) -> Res<Self> {
 		Ok(Builder {
-			fd:  try!(fcntl::open(path.as_ref(), fcntl::O_WRONLY | fcntl::O_NONBLOCK, stat::Mode::empty())),
+			fd:  try!(fcntl::open(path.as_ref(), fcntl::OFlag::O_WRONLY | fcntl::OFlag::O_NONBLOCK, stat::Mode::empty())),
 			def: unsafe { mem::zeroed() },
 			abs: None,
 		})
@@ -55,7 +55,7 @@ impl Builder {
 		let bytes  = string.as_bytes_with_nul();
 
 		if bytes.len() > UINPUT_MAX_NAME_SIZE as usize {
-			try!(Err(nix::Error::from_errno(nix::Errno::EINVAL)));
+			try!(Err(nix::Error::from_errno(Errno::EINVAL)));
 		}
 
 		(&mut self.def.name)[..bytes.len()]
@@ -94,10 +94,10 @@ impl Builder {
 		unsafe {
 			//try!(Errno::result(ui_set_evbit(self.fd, EV_KEY)));
 			//try!(Errno::result(ui_set_keybit(self.fd, KEY_H)));
-			ui_set_evbit(self.fd, EV_KEY as *const c_int)?;
+			Errno::result(ui_set_evbit(self.fd, EV_KEY as i32))?;
 			//ui_set_keybit(self.fd, KEY_H as *const c_int)?;
 			for key_code in key_codes {
-				ui_set_keybit(self.fd, *key_code as *const c_int)?;
+				Errno::result(ui_set_keybit(self.fd, *key_code as i32))?;
 			}
 			//try!(ui_set_keybit(self.fd, &KEY_H));
 		}
@@ -279,7 +279,7 @@ impl Builder {
 			try!(unistd::write(self.fd, slice::from_raw_parts(ptr, size)));
 			//todo: try!(Errno::result(ui_dev_create(self.fd)));
 			// try1: Errno::result(ui_dev_create(self.fd)).unwrap();
-			try!(ui_dev_create(self.fd));
+			try!(Errno::result(ui_dev_create(self.fd)));
 		}
 
 		Ok(Device::new(self.fd))
