@@ -9,6 +9,8 @@ description = "Linux keyboard mapper"
 repository  = "https://code.moparisthebest.com/moparisthebest/rusty-keys"
 keywords    = ["linux", "input", "keyboard", "keymapper"]
 
+edition = "2018"
+
 include = [
     "src/**",
     "Cargo.toml",

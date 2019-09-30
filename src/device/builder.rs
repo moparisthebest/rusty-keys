@@ -5,7 +5,7 @@ use libc::c_int;
 use nix::{self, fcntl, unistd, errno::Errno};
 use nix::sys::stat;
 use ffi::*;
-use {Result as Res, Device};
+use crate::{Result as Res, Device};
 use std::collections::hash_map::Values;
 
 #[cfg(feature = "udev")]
@@ -22,28 +22,12 @@ impl Builder {
 	/// Create a builder from the specified path.
 	pub fn open<P: AsRef<Path>>(path: P) -> Res<Self> {
 		Ok(Builder {
-			fd:  try!(fcntl::open(path.as_ref(), fcntl::OFlag::O_WRONLY | fcntl::OFlag::O_NONBLOCK, stat::Mode::empty())),
+			fd:  fcntl::open(path.as_ref(), fcntl::OFlag::O_WRONLY | fcntl::OFlag::O_NONBLOCK, stat::Mode::empty())?,
 			def: unsafe { mem::zeroed() },
 			abs: None,
 		})
 	}
 
-	#[cfg(feature = "udev")]
-	/// Create a builder from the default path taken from udev.
-	pub fn default() -> Res<Self> {
-		let     context    = try!(udev::Context::new());
-		let mut enumerator = try!(udev::Enumerator::new(&context));
-
-		try!(enumerator.match_subsystem("misc"));
-		try!(enumerator.match_sysname("uinput"));
-
-		let device = try!(try!(enumerator.scan_devices())
-			.next().ok_or(Error::NotFound));
-
-		Builder::open(try!(device.devnode().ok_or(Error::NotFound)))
-	}
-
-	#[cfg(not(feature = "udev"))]
 	/// Create a builder from `/dev/uinput`.
 	pub fn default() -> Res<Self> {
 		Builder::open("/dev/uinput")
@@ -51,11 +35,11 @@ impl Builder {
 
 	/// Set the name.
 	pub fn name<T: AsRef<str>>(mut self, value: T) -> Res<Self> {
-		let string = try!(CString::new(value.as_ref()));
+		let string = CString::new(value.as_ref())?;
 		let bytes  = string.as_bytes_with_nul();
 
 		if bytes.len() > UINPUT_MAX_NAME_SIZE as usize {
-			try!(Err(nix::Error::from_errno(Errno::EINVAL)));
+			Err(nix::Error::from_errno(Errno::EINVAL))?;
 		}
 
 		(&mut self.def.name)[..bytes.len()]
@@ -276,10 +260,10 @@ impl Builder {
 			let ptr  = &self.def as *const _ as *const u8;
 			let size = mem::size_of_val(&self.def);
 
-			try!(unistd::write(self.fd, slice::from_raw_parts(ptr, size)));
+			unistd::write(self.fd, slice::from_raw_parts(ptr, size))?;
 			//todo: try!(Errno::result(ui_dev_create(self.fd)));
 			// try1: Errno::result(ui_dev_create(self.fd)).unwrap();
-			try!(Errno::result(ui_dev_create(self.fd)));
+			Errno::result(ui_dev_create(self.fd))?;
 		}
 
 		Ok(Device::new(self.fd))

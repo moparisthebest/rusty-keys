@@ -1,5 +1,5 @@
 
-use device::Device;
+use crate::Device;
 
 use ffi::*;
 use libc::{c_int, input_event};
@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Read;
 use std::collections::HashMap;
 
-use {Error, Result};
+use crate::{Error, Result};
 
 // 1 is down, 0 is up
 const DOWN: i32 = 1;
