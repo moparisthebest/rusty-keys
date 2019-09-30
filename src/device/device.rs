@@ -1,7 +1,7 @@
 use std::{mem, ptr, slice};
 use libc::{timeval, gettimeofday, input_event, c_int};
 use nix::{unistd, errno::Errno};
-use ffi::*;
+use uinput_sys::*;
 use crate::{Result as Res};
 
 /// The virtual device.

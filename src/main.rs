@@ -1,12 +1,6 @@
-extern crate rusty_keys;
-extern crate uinput_sys as ffi;
-extern crate libc;
-extern crate getopts;
-extern crate inotify;
-
 use rusty_keys::{KeyMaps, Device, InputDevice, Result};
 
-use ffi::*;
+use uinput_sys::*;
 use libc::input_event;
 use std::process::exit;
 use std::{env, thread};

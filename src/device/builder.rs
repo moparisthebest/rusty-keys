@@ -4,7 +4,7 @@ use std::ffi::CString;
 use libc::c_int;
 use nix::{self, fcntl, unistd, errno::Errno};
 use nix::sys::stat;
-use ffi::*;
+use uinput_sys::*;
 use crate::{Result as Res, Device};
 use std::collections::hash_map::Values;
 

@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::os::unix::io::AsRawFd;
 use libc::{input_event, c_int};
+use nix::ioctl_write_ptr;
 use crate::{Error,Result};
 
 ioctl_write_ptr!(eviocgrab, b'E', 0x90, c_int);

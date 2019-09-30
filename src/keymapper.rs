@@ -1,7 +1,7 @@
 
 use crate::Device;
 
-use ffi::*;
+use uinput_sys::*;
 use libc::{c_int, input_event};
 
 use std::fs::File;
@@ -399,9 +399,8 @@ impl KeyMapper for Key {
     }
 }
 
-extern crate toml;
-
 use std::path::Path;
+use serde_derive::Deserialize;
 
 #[derive(Deserialize, Debug)]
 pub struct KeymapConfig {

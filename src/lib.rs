@@ -1,18 +1,8 @@
 #![recursion_limit = "1000"]
 
-extern crate libc;
-
-extern crate uinput_sys as ffi;
-
-#[macro_use]
-extern crate nix;
-
-#[macro_use]
-extern crate serde_derive;
-
 use std::path::Path;
 
-mod error;
+pub mod error;
 pub use error::Error;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
