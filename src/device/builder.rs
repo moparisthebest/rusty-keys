@@ -8,9 +8,6 @@ use uinput_sys::*;
 use crate::{Result as Res, Device};
 use std::collections::hash_map::Values;
 
-#[cfg(feature = "udev")]
-use udev;
-
 /// Device builder.
 pub struct Builder {
 	fd:  c_int,

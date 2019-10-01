@@ -5,9 +5,6 @@ use std::io;
 use std::sync::mpsc;
 use nix;
 
-#[cfg(feature = "udev")]
-use udev;
-
 use libc;
 
 /// UInput error.
@@ -18,10 +15,6 @@ pub enum Error {
 
 	/// Errors with internal nulls in names.
 	Nul(ffi::NulError),
-
-	#[cfg(feature = "udev")]
-	/// Errors coming from udev.
-	Udev(udev::Error),
 
 	Io(io::Error),
 
@@ -43,13 +36,6 @@ impl From<ffi::NulError> for Error {
 impl From<nix::Error> for Error {
 	fn from(value: nix::Error) -> Self {
 		Error::Nix(value)
-	}
-}
-
-#[cfg(feature = "udev")]
-impl From<udev::Error> for Error {
-	fn from(value: udev::Error) -> Self {
-		Error::Udev(value)
 	}
 }
 
@@ -78,10 +64,6 @@ impl error::Error for Error {
 				err.description(),
 
 			&Error::Nul(ref err) =>
-				err.description(),
-
-			#[cfg(feature = "udev")]
-			&Error::Udev(ref err) =>
 				err.description(),
 
 			&Error::Io(ref err) =>
