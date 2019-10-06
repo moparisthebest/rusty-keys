@@ -69,7 +69,7 @@ impl Builder {
 		self
 	}
 
-	pub fn event(mut self, key_codes: Values<&str, c_int>) -> Res<Self> {
+	pub fn event(mut self, key_codes: Values<&str, u16>) -> Res<Self> {
 		self.abs = None;
 		//let test_ev_key : c_int = EV_KEY as c_int;
 		unsafe {

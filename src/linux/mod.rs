@@ -22,6 +22,10 @@ use std::{env, thread};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
+// 1 is down, 0 is up
+const DOWN: i32 = 1;
+const UP: i32 = 0;
+
 use getopts::Options;
 
 use inotify::{
@@ -30,11 +34,73 @@ use inotify::{
     WatchMask,
 };
 use std::collections::HashMap;
-use std::os::raw::c_int;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 const EV_KEY_U16: u16 = EV_KEY as u16;
+
+type LinuxKeyMaps = KeyMaps<Device, u16, input_event>;
+
+impl KeyEvent<u16> for input_event {
+    fn code(&self) -> u16 {
+        self.code
+    }
+
+    fn value(&self) -> KeyState {
+        match self.value {
+            UP => KeyState::UP,
+            DOWN => KeyState::DOWN,
+            _ => KeyState::OTHER,
+        }
+    }
+}
+
+impl Keyboard<u16, input_event> for Device {
+    fn send(&self, event: &mut input_event) -> Result<()> {
+        self.write_event(event)
+    }
+
+    fn send_mod_code(&self, code: u16, event: &mut input_event) -> Result<()> {
+        event.code = code;
+        Keyboard::send(self, event)
+    }
+
+    fn send_mod_code_value(&self, code: u16, up_not_down: bool, event: &mut input_event) -> Result<()> {
+        event.code = code;
+        let value = event.value;
+        if up_not_down {
+            event.value = UP;
+        } else {
+            event.value = DOWN;
+        }
+        Keyboard::send(self, event)?;
+        // set it back
+        event.value = value;
+        Ok(())
+    }
+
+    fn synchronize(&self) -> Result<()> {
+        Device::synchronize(self)
+    }
+
+    fn left_shift_code(&self) -> u16 {
+        KEY_LEFTSHIFT as u16
+    }
+
+    fn right_shift_code(&self) -> u16 {
+        KEY_RIGHTSHIFT as u16
+    }
+
+    fn caps_lock_code(&self) -> u16 {
+        KEY_CAPSLOCK as u16
+    }
+
+    fn block_key(&self) -> Result<()> {
+        Ok(()) // we don't actually use/need this here
+    }
+}
+
+
 
 #[derive(Debug)]
 struct Config {
@@ -62,7 +128,7 @@ pub fn main_res() -> Result<()> {
         .event(key_map.values())?
         .create()?;
 
-    let mut key_map = KeyMaps::from_cfg(&key_map, &config.config_file);
+    let mut key_map = LinuxKeyMaps::from_cfg(&key_map, &config.config_file);
     //println!("keymaps: {:?}", keymaps);
 
     if config.device_files.len() == 1 {
@@ -135,7 +201,7 @@ pub fn main_res() -> Result<()> {
     Ok(())
 }
 
-fn send_event(key_map: &mut KeyMaps, mut event: input_event, device: &Device) -> Result<()> {
+fn send_event(key_map: &mut LinuxKeyMaps, mut event: input_event, device: &Device) -> Result<()> {
     if event.type_ == EV_KEY_U16 {
         key_map.send_event(&mut event, &device)?
     } else {
@@ -233,7 +299,7 @@ fn get_keyboard_device_filenames() -> Vec<String> {
     filenames
 }
 
-pub fn key_map() -> HashMap<&'static str, c_int> {
+pub fn key_map() -> HashMap<&'static str, u16> {
         [
             // generated like:
             // grep -o 'KEY_[^ :;]*' ~/.cargo/registry/src/github.com-1ecc6299db9ec823/uinput-sys-0.1.3/src/events.rs | sed 's/^KEY_//' | awk '{print "(\""$1"\", KEY_"$1"),"}'
@@ -541,5 +607,5 @@ pub fn key_map() -> HashMap<&'static str, c_int> {
             ("P0", KEY_KP0),
             ("PDOT", KEY_KPDOT),
             ("PENT", KEY_KPENTER),
-        ].iter().cloned().map(|(m, v)| (m, v)).collect()
+        ].iter().cloned().map(|(m, v)| (m, v as u16)).collect()
     }
