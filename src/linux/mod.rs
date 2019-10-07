@@ -35,8 +35,6 @@ use inotify::{
 };
 use std::collections::HashMap;
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-
 const EV_KEY_U16: u16 = EV_KEY as u16;
 
 type LinuxKeyMaps = KeyMaps<Device, u16, input_event>;

@@ -10,6 +10,11 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub mod keymapper;
 pub use keymapper::*;
 
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+pub use windows::*;
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]

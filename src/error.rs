@@ -2,15 +2,21 @@ use std::fmt;
 use std::error;
 use std::ffi;
 use std::io;
+
+#[cfg(target_os = "linux")]
 use std::sync::mpsc;
+
+#[cfg(target_os = "linux")]
 use nix;
 
+#[cfg(target_os = "linux")]
 use libc;
 
 /// UInput error.
 #[derive(Debug)]
 pub enum Error {
 	/// System errors.
+	#[cfg(target_os = "linux")]
 	Nix(nix::Error),
 
 	/// Errors with internal nulls in names.
@@ -18,6 +24,7 @@ pub enum Error {
 
 	Io(io::Error),
 
+	#[cfg(target_os = "linux")]
 	Send(mpsc::SendError<libc::input_event>),
 
 	/// The uinput file could not be found.
@@ -33,6 +40,7 @@ impl From<ffi::NulError> for Error {
 	}
 }
 
+#[cfg(target_os = "linux")]
 impl From<nix::Error> for Error {
 	fn from(value: nix::Error) -> Self {
 		Error::Nix(value)
@@ -45,6 +53,7 @@ impl From<io::Error> for Error {
 	}
 }
 
+#[cfg(target_os = "linux")]
 impl From<mpsc::SendError<libc::input_event>> for Error {
 	fn from(value: mpsc::SendError<libc::input_event>) -> Self {
 		Error::Send(value)
@@ -60,6 +69,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
 	fn description(&self) -> &str {
 		match self {
+			#[cfg(target_os = "linux")]
 			&Error::Nix(ref err) =>
 				err.description(),
 
@@ -69,6 +79,7 @@ impl error::Error for Error {
 			&Error::Io(ref err) =>
 				err.description(),
 
+			#[cfg(target_os = "linux")]
 			&Error::Send(ref err) =>
 				err.description(),
 
