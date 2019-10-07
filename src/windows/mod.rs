@@ -1,11 +1,13 @@
+#![windows_subsystem = "windows"]
 
 use crate::*;
 use std::env;
 use std::process::exit;
 
 use getopts::Options;
+use std::fs::File;
 
-use winapi::um::winuser::{KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, MSG, GetMessageW, CallNextHookEx, SetWindowsHookExW, INPUT_KEYBOARD, MapVirtualKeyW, LPINPUT, INPUT, KEYBDINPUT, SendInput, KEYEVENTF_SCANCODE, KEYEVENTF_KEYUP, WM_KEYUP, WM_KEYDOWN, MAPVK_VK_TO_VSC};
+use winapi::um::winuser::{KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, MSG, GetMessageW, CallNextHookEx, SetWindowsHookExW, INPUT_KEYBOARD, MapVirtualKeyW, LPINPUT, INPUT, KEYBDINPUT, SendInput, KEYEVENTF_SCANCODE, KEYEVENTF_KEYUP, WM_KEYUP, WM_KEYDOWN, MAPVK_VK_TO_VSC, ShowWindow, SW_HIDE};
 use winapi::shared::windef::{HHOOK__, HWND};
 use winapi::shared::minwindef::{LRESULT, WPARAM, LPARAM, HINSTANCE};
 use winapi::shared::basetsd::ULONG_PTR;
@@ -18,8 +20,13 @@ use std::mem::{zeroed, size_of};
 use winapi::_core::ptr::null_mut;
 use winapi::_core::mem::transmute_copy;
 
+use lazy_static::lazy_static;
+use std::sync::Mutex;
+use winapi::um::wincon::GetConsoleWindow;
+
 type WindowsKeyMaps = KeyMaps<Device, USizeableDWORD, InputEvent, LRESULT>;
 
+// this is used for identifying the fake keypresses we insert, so we don't process them in an infinite loop
 const FAKE_EXTRA_INFO: ULONG_PTR = 332;
 
 // non-zero means don't send on, I think https://msdn.microsoft.com/en-us/library/windows/desktop/ms644984(v=vs.85).aspx
@@ -90,36 +97,23 @@ impl Keyboard<USizeableDWORD, InputEvent, LRESULT> for Device {
     }
 }
 
-unsafe impl Sync for WindowsKeyMaps {
-    // this isn't safe, but windows promises us keybd_proc will only be called by a single thread at
-    // a time, so if that holds true, this is safe
-}
-
 unsafe impl Send for WindowsKeyMaps {
-
+    // windows promises us keybd_proc will only be called by a single thread at a time
+    // but rust makes us wrap in mutex anyway, so we are extra safe...
 }
 
 const DEVICE: Device = Device;
-
-//static mut KEY_MAPPER_PTR: *const Option<WindowsKeyMaps> = &None;
-//static mut KEY_MAPPERe: WindowsKeyMaps = unsafe { std::mem::uninitialized() };
-//static mut KEY_MAPPER: Option<WindowsKeyMaps> = None;
-//const KEY_MAPPER_PTR: i32 = 0;
-/*
-*/
-use lazy_static::lazy_static;
-use std::sync::Mutex;
 
 lazy_static! {
 static ref KEY_MAPPER: Mutex<WindowsKeyMaps> = {
 
     let config = parse_args();
-    println!("Config: {:?}", config);
+    //println!("Config: {:?}", config);
 
     let key_map = key_map();
     //println!("key_map: {:?}", key_map);
 
-    println!("config_file: {}", config.config_file);
+    println!("chosen config file: {}", config.config_file);
 
     Mutex::new(WindowsKeyMaps::from_cfg(&key_map, &config.config_file))
 };
@@ -127,14 +121,16 @@ static ref KEY_MAPPER: Mutex<WindowsKeyMaps> = {
 
 unsafe extern "system" fn keybd_proc(code: c_int, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     let kb_struct = *(l_param as *const KBDLLHOOKSTRUCT);
-    println!("value: {:X}, key: {:X}", w_param, kb_struct.vkCode);
+    //println!("value: {:X}, key: {:X}", w_param, kb_struct.vkCode);
     if kb_struct.dwExtraInfo == FAKE_EXTRA_INFO {
         return CallNextHookEx(null_mut(), code, w_param, l_param);
     }
 
+    /*
     println!("code: {}, w_param: {}, vkCode: {}, scanCode: {}, flags: {}, time: {}, dwExtraInfo: {}",
              code, w_param,
              kb_struct.vkCode, kb_struct.scanCode, kb_struct.flags, kb_struct.time, kb_struct.dwExtraInfo);
+    */
 
     let mut input_event = InputEvent{
         code,
@@ -178,35 +174,28 @@ fn send_keybd_input(flags: u32, key_code: USizeableDWORD) {
 
 
 pub fn main_res() -> Result<()> {
-    /*
-    let config = parse_args();
-    println!("Config: {:?}", config);
-
-    let key_map = key_map();
-    //println!("key_map: {:?}", key_map);
-
-    println!("caps_lock_code: {}", DEVICE.caps_lock_code().0);
-
-    let key_map = WindowsKeyMaps::from_cfg(&key_map, &config.config_file);
-    */
-    //let mut ptr: *const WindowsKeyMaps = &key_map;
-    //let key_map = Box::new(key_map);
-    //let static_ref = Box::leak(key_map);
-    //let raw = Box::into_raw(key_map);
-    //let ptr: *const i32 = &raw;
-    //let my_num_ptr: *const i32 = &*key_map;
-    //key_map.leak();
-    //KEY_MAPPER_PTR = Box::into_raw(key_map);
-    //unsafe { KEY_MAPPER = Some(key_map); }
-    //unsafe { KEY_MAPPER_PTR = &Some(key_map); }
-    //let bla = unsafe {*KEY_MAPPER_PTR};
+    // this is just to cause the lazy_static init to run first, so if -h or -v is wanted, we do that
+    // and exit immediately... todo: how to avoid mutex/lazy_static entirely???
+    let _ = KEY_MAPPER.lock().unwrap();
 
     // now start actually intercepting keypresses
     let keybd_hhook: AtomicPtr<HHOOK__> = AtomicPtr::default();
     set_hook(WH_KEYBOARD_LL, &keybd_hhook, keybd_proc);
+
+    println!("rusty-keys {} keyboard hook registered, now for some reason you *sometimes* have to type in this window once to activate it, thanks windows!", VERSION);
+
+    unsafe {
+        // hide window
+        // todo: probably should be tray icon someplace in future to quit, and error messages as windows popups etc...
+        let hwnd = GetConsoleWindow();
+        ShowWindow( hwnd, SW_HIDE );
+    }
+    
     let mut msg: MSG = unsafe { zeroed() };
     unsafe { GetMessageW(&mut msg, 0 as HWND, 0, 0) };
-
+    
+    //std::thread::sleep(std::time::Duration::from_millis(400000));
+    
     Ok(())
 }
 
@@ -221,23 +210,41 @@ impl Config {
     }
 }
 
+fn get_env_push(key: &str, to_push: &str, vec: &mut Vec<String>) {
+    if let Some(var) = env::var_os(key) {
+        if let Ok(str) = var.into_string() {
+            let mut str = str.to_owned();
+            str.push_str(to_push);
+            vec.push(str);
+        }
+    }
+}
+
 fn parse_args() -> Config {
     fn print_usage(program: &str, opts: Options) {
-        let brief = format!("Usage: {} [options]", program);
+        let brief = format!("Usage: {} [options] [keymap.toml]", program);
         println!("{}", opts.usage(&brief));
     }
 
     let args: Vec<_> = env::args().collect();
+    
+    let mut default_configs = Vec::new();
+    get_env_push("USERPROFILE", "\\keymap.toml", &mut default_configs);
+    get_env_push("APPDATA", "\\keymap.toml", &mut default_configs);
+    
+    default_configs.push("keymap.toml".to_string());
+    
+    let c_msg = format!("specify the keymap config file to use (default in order: {:?})", default_configs);
 
     let mut opts = Options::new();
     opts.optflag("h", "help", "prints this help message");
     opts.optflag("v", "version", "prints the version");
-    opts.optopt("c", "config", "specify the keymap config file to use (default: /etc/rusty-keys/keymap.toml)", "FILE");
+    opts.optopt("c", "config", &c_msg, "FILE");
 
     let matches = opts.parse(&args[1..]);
     if matches.is_err() {
         print_usage(&args[0], opts);
-        exit(0);
+        exit(1);
     }
     let matches = matches.unwrap();
     if matches.opt_present("h") {
@@ -250,7 +257,21 @@ fn parse_args() -> Config {
         exit(0);
     }
 
-    let config_file = matches.opt_str("c").unwrap_or("/etc/rusty-keys/keymap.toml".to_owned());
+    let config_file = matches.opt_str("c").unwrap_or_else(|| {
+        let remaining_args = matches.free;
+        if remaining_args.len() > 0 {
+            remaining_args[0].clone()
+        } else {
+            for keymap in default_configs.drain(..) {
+                if File::open(&keymap).is_ok() {
+                    return keymap;
+                }
+            }
+            println!("Error: no keymap.toml found...");
+            print_usage(&args[0], opts);
+            exit(1);
+        }
+    });
 
     Config::new(config_file)
 }
