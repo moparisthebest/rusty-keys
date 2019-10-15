@@ -1,5 +1,5 @@
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn main() {
     let ret = rusty_keys::main_res();
     if let Err(e) = ret {
@@ -7,7 +7,7 @@ fn main() {
     }
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn main() {
     panic!("sorry no main impl for this platform");
 }
