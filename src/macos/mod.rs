@@ -9,6 +9,7 @@ use std::process::exit;
 
 use getopts::Options;
 use std::fs::File;
+use std::io::Write;
 
 pub mod codes;
 use codes::*;
@@ -48,9 +49,16 @@ impl KeyEvent<CGKeyCode> for InputEvent {
         //self.event.to_owned().get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE) as CGKeyCode
         unsafe { CGEventGetIntegerValueField(self.event, kCGKeyboardEventKeycode) }
     }
-
+/*
+    fn set_code(&self, code: CGKeyCode) {
+        //1
+        //self.event.to_owned().get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE) as CGKeyCode
+        unsafe { CGEventSetIntegerValueField(self.event, kCGKeyboardEventKeycode) }
+    }
+*/
     fn value(&self) -> KeyState {
         match self.event_type {
+            kCGEventFlagsChanged => KeyState::DOWN,
             kCGEventKeyDown => KeyState::DOWN,
             kCGEventKeyUp => KeyState::UP,
             kCGEventTapDisabledByTimeout => {
@@ -150,7 +158,9 @@ pub fn main_res() -> Result<()> {
     let key_maps = MacOSKeyMaps::from_cfg(&key_map, &config.config_file);
 
     let mask = CGEventMaskBit(kCGEventKeyDown)
-        | CGEventMaskBit(kCGEventKeyUp);
+        | CGEventMaskBit(kCGEventKeyUp)
+        | CGEventMaskBit(kCGEventFlagsChanged)
+        ;
 
     unsafe {
         let options = 0;
@@ -184,45 +194,6 @@ pub fn main_res() -> Result<()> {
         CFRunLoopRun();
     }
 
-    unsafe {
-        /*
-        CFMachPortRef      eventTap;
-        CGEventMask        eventMask;
-        CFRunLoopSourceRef runLoopSource;
-
-
-        // Create an event tap. We are interested in key presses.
-        let eventMask = ((1 << kCGEventKeyDown) | (1 << kCGEventKeyUp));
-        let eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
-                                    eventMask, myCGEventCallback, NULL);
-
-        */
-        /*
-        if (!eventTap) {
-            fprintf(stderr, "failed to create event tap\n");
-            exit(1);
-        }
-
-        // Create a run loop source.
-        let runLoopSource = CFMachPortCreateRunLoopSource(
-            kCFAllocatorDefault, eventTap, 0);
-
-        // Add to the current run loop.
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource,
-                           kCFRunLoopCommonModes);
-
-        // Enable the event tap.
-        CGEventTapEnable(eventTap, true);
-
-        // Set it all running.
-        println!("woo1");
-        CFRunLoopRun();
-        println!("woo2");
-        */
-    }
-    
-    //std::thread::sleep(std::time::Duration::from_millis(400000));
-    
     Ok(())
 }
 
@@ -254,13 +225,13 @@ fn parse_args() -> Config {
     }
 
     let args: Vec<_> = env::args().collect();
-    
+
     let mut default_configs = Vec::new();
     get_env_push("USERPROFILE", "\\keymap.toml", &mut default_configs);
     get_env_push("APPDATA", "\\keymap.toml", &mut default_configs);
-    
+
     default_configs.push("keymap.toml".to_string());
-    
+
     let c_msg = format!("specify the keymap config file to use (default in order: {:?})", default_configs);
 
     let mut opts = Options::new();
@@ -304,6 +275,7 @@ fn parse_args() -> Config {
 }
 
 use libc;
+use core_graphics::event::CGEventType::Null;
 
 // Opaque Pointer Types
 pub type Pointer = *mut libc::c_void;
@@ -317,6 +289,7 @@ pub type CGEventTapLocation = u32;
 pub type CGEventTapOptions = u32;
 pub type CGEventTapPlacement = u32;
 pub type CGEventType = u32;
+pub type CGEventFlags = u64;
 //pub type CGKeyCode = u16;
 
 // Callback Type
@@ -434,7 +407,38 @@ pub const kCGEventTapDisabledByTimeout: CGEventType = 0xFFFFFFFE;
         );
 
         pub fn CGEventTapEnable(port: CFMachPortRef, enable: bool);
+
+        pub fn CGEventGetType(event: CGEventRef) -> CGEventType;
+        pub fn CGEventGetFlags(event: CGEventRef) -> CGEventFlags;
     }
+
+const CGEventFlagNull: u64 = 0;
+
+// Device-independent modifier key bits.
+const CGEventFlagAlphaShift: u64 = 0x00010000;
+const CGEventFlagShift: u64 = 0x00020000;
+const CGEventFlagControl: u64 = 0x00040000;
+const CGEventFlagAlternate: u64 = 0x00080000;
+const CGEventFlagCommand: u64 = 0x00100000;
+
+// Special key identifiers.
+const CGEventFlagHelp: u64 = 0x00400000;
+const CGEventFlagSecondaryFn: u64 = 0x00800000;
+
+// Identifies key events from numeric keypad area on extended keyboards.
+const CGEventFlagNumericPad: u64 = 0x00200000;
+
+// Indicates if mouse/pen movement events are not being coalesced
+const CGEventFlagNonCoalesced: u64 = 0x00000100;
+
+const NX_DEVICELCTLKEYMASK: u64 =    0x00000001;
+const NX_DEVICELSHIFTKEYMASK: u64 =  0x00000002;
+const NX_DEVICERSHIFTKEYMASK: u64 =  0x00000004;
+const NX_DEVICELCMDKEYMASK: u64 =    0x00000008;
+const NX_DEVICERCMDKEYMASK: u64 =    0x00000010;
+const NX_DEVICELALTKEYMASK: u64 =    0x00000020;
+const NX_DEVICERALTKEYMASK: u64 =    0x00000040;
+const NX_DEVICERCTLKEYMASK: u64 = 0x00002000;
 
 ///  This callback will be registered to be invoked from the run loop
 ///  to which the event tap is added as a source.
@@ -442,6 +446,28 @@ pub const kCGEventTapDisabledByTimeout: CGEventType = 0xFFFFFFFE;
 #[allow(unused_variables)]
 pub extern fn callback(proxy: Pointer, event_type: CGEventType, event: CGEventRef, key_maps: &mut MacOSKeyMaps)
                        -> CGEventRef {
+
+    /*
+    println!("+++++++++++++++++++++++++++++++++++++++");
+    let event_type2 = unsafe { CGEventGetType(event) };
+    println!("event_type2: {}", event_type2);
+
+
+    let flags = unsafe { CGEventGetFlags(event) };
+    println!("flags: {}", flags);
+    println!("flags: {:#064b}", flags);
+
+    println!("EventFlagsChanged: {:x} ({} {} {} {} {} {} {} {})\n",
+           flags,
+    if (flags & NX_DEVICELCTLKEYMASK) != 0 { "lcontrol" } else { "" },
+    if (flags & NX_DEVICERCTLKEYMASK) != 0 { "rcontrol" } else { "" },
+    if (flags & NX_DEVICELSHIFTKEYMASK) != 0 { "lshift" } else { "" },
+    if (flags & NX_DEVICERSHIFTKEYMASK) != 0 { "rshift" } else { "" },
+    if (flags & NX_DEVICELCMDKEYMASK) != 0 { "lcommand" } else { "" },
+    if (flags & NX_DEVICERCMDKEYMASK) != 0 { "rcommand" } else { "" },
+    if (flags & NX_DEVICELALTKEYMASK) != 0 { "lalt" } else { "" },
+    if (flags & NX_DEVICERALTKEYMASK) != 0 { "ralt" } else { "" },
+    );
 
 
     match event_type {
@@ -458,17 +484,29 @@ pub extern fn callback(proxy: Pointer, event_type: CGEventType, event: CGEventRe
             //return event;
         },
     };
+    */
 
     unsafe {
         let mut input_event = InputEvent {
             event_type,
             event,
         };
+        /*
         println!("got keyCode: {}", input_event.code());
-        //Some(input_event.event)
+        println!("---------------------------------------");
+        */
+        if input_event.value() == KeyState::DOWN {
+            let code = input_event.code();
+            println!("KEY 0x{:04X}", code);
+            write_key_file(code).expect("error writing key file");
+        }
+        std::ptr::null_mut()
+        //input_event.event.set
         //input_event.event
-        key_maps.send_event(&mut input_event, &DEVICE).expect("macos shouldn't error...")
-            .unwrap_or_else(|| std::ptr::null_mut()) // None means return NULL
+        //Null.
+        //Some(input_event.event)
+        //key_maps.send_event(&mut input_event, &DEVICE).expect("macos shouldn't error...")
+        //    .unwrap_or_else(|| std::ptr::null_mut()) // None means return NULL
         //let keyCode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
         //println!("got keyCode: {}", keyCode);
         /*
@@ -494,6 +532,12 @@ pub extern fn callback(proxy: Pointer, event_type: CGEventType, event: CGEventRe
         */
     }
     //event
+}
+
+fn write_key_file(code: CGKeyCode) -> std::io::Result<()> {
+    let mut buffer = File::create("/Users/mopar/key.txt")?;
+    write!(buffer, "0x{:04X}", code)?;
+    Ok(())
 }
 
 /// Redefine macro for bitshifting from header as function here
