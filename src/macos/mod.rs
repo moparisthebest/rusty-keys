@@ -18,6 +18,7 @@ use lazy_static::lazy_static;
 use std::sync::Mutex;
 use core_graphics::event::CGKeyCode;
 use core_graphics::event::*;
+use core_graphics::event_source::*;
 use core_foundation_sys::*;
 use core_foundation_sys::base::*;
 use core_foundation_sys::runloop::*;
@@ -83,16 +84,47 @@ pub struct Device;
 
 impl Keyboard<CGKeyCode, InputEvent, Option<CGEventRef>> for Device {
     fn send(&self, event: &mut InputEvent) -> Result<Option<CGEventRef>> {
+        println!("send orig: {}", event.code());
         Ok(Some(event.event))
     }
 
     fn send_mod_code(&self, code: CGKeyCode, event: &mut InputEvent) -> Result<Option<CGEventRef>> {
         // event.value should only ever be UP/DOWN when this method is called
-        Ok(None)
+        println!("send_mod_code orig: {} code: {}", event.code(), code);
+        //event.event.set_integer_value_field();
+        //unsafe { CGEventSetIntegerValueField(event.event, kCGKeyboardEventKeycode, code as i64) };
+
+        //Ok(Some(event.event))
+        //Ok(None)
+
+        self.send_mod_code_value(code, event.value() == KeyState::UP, event)
     }
 
-    fn send_mod_code_value(&self, code: CGKeyCode, up_not_down: bool, _event: &mut InputEvent) -> Result<Option<CGEventRef>> {
-        Ok(None)
+    fn send_mod_code_value(&self, code: CGKeyCode, up_not_down: bool, event: &mut InputEvent) -> Result<Option<CGEventRef>> {
+        println!("send_mod_code_value orig: {} code: {}, up_not_down: {}", event.code(), code, up_not_down);
+
+        // https://github.com/enigo-rs/enigo/blob/master/src/macos/macos_impl.rs
+        /*
+        let event_source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
+            .expect("Failed creating event source");
+
+        let event =
+            CGEvent::new_keyboard_event(event_source.clone(), code, !up_not_down)
+                .expect("Failed creating event");
+        event.post(CGEventTapLocation::HID);
+        */
+
+        unsafe { CGEventSetIntegerValueField(event.event, kCGKeyboardEventKeycode, code as i64) };
+
+
+        let flags = unsafe { CGEventGetFlags(event.event) };
+        print_flags(flags);
+        let flags = flags >> NX_DEVICERSHIFTKEYMASK;
+        print_flags(flags);
+        //CGEventSetFlags(event, flags);
+
+        Ok(Some(event.event))
+        //Ok(None)
     }
 
     fn synchronize(&self) -> Result<Option<CGEventRef>> {
@@ -148,14 +180,15 @@ pub fn main_res() -> Result<()> {
     //let _ = KEY_MAPPER.lock().unwrap();
 
     let config = parse_args();
-    //println!("Config: {:?}", config);
+    println!("Config: {:?}", config);
 
     let key_map = key_map();
-    //println!("key_map: {:?}", key_map);
+    println!("key_map: {:?}", key_map);
 
     println!("chosen config file: {}", config.config_file);
 
     let key_maps = MacOSKeyMaps::from_cfg(&key_map, &config.config_file);
+    //println!("key_maps: {}", key_maps);
 
     let mask = CGEventMaskBit(kCGEventKeyDown)
         | CGEventMaskBit(kCGEventKeyUp)
@@ -337,6 +370,8 @@ pub const kCGEventTapDisabledByTimeout: CGEventType = 0xFFFFFFFE;
             field: CGEventField,
         ) -> CGKeyCode;
 
+        fn CGEventSetIntegerValueField(event: CGEventRef, field: CGEventField, value: i64);
+
         /// Create an event tap
         ///
         /// # Arguments
@@ -410,6 +445,7 @@ pub const kCGEventTapDisabledByTimeout: CGEventType = 0xFFFFFFFE;
 
         pub fn CGEventGetType(event: CGEventRef) -> CGEventType;
         pub fn CGEventGetFlags(event: CGEventRef) -> CGEventFlags;
+        pub fn CGEventSetFlags(event: CGEventRef, flags: CGEventFlags);
     }
 
 const CGEventFlagNull: u64 = 0;
@@ -440,34 +476,37 @@ const NX_DEVICELALTKEYMASK: u64 =    0x00000020;
 const NX_DEVICERALTKEYMASK: u64 =    0x00000040;
 const NX_DEVICERCTLKEYMASK: u64 = 0x00002000;
 
+fn print_flags(flags: CGEventFlags) {
+    println!("flags: {}", flags);
+    println!("flags: {:#064b}", flags);
+
+    println!("EventFlags: {:x} ({} {} {} {} {} {} {} {})\n",
+             flags,
+             if (flags & NX_DEVICELCTLKEYMASK) != 0 { "lcontrol" } else { "" },
+             if (flags & NX_DEVICERCTLKEYMASK) != 0 { "rcontrol" } else { "" },
+             if (flags & NX_DEVICELSHIFTKEYMASK) != 0 { "lshift" } else { "" },
+             if (flags & NX_DEVICERSHIFTKEYMASK) != 0 { "rshift" } else { "" },
+             if (flags & NX_DEVICELCMDKEYMASK) != 0 { "lcommand" } else { "" },
+             if (flags & NX_DEVICERCMDKEYMASK) != 0 { "rcommand" } else { "" },
+             if (flags & NX_DEVICELALTKEYMASK) != 0 { "lalt" } else { "" },
+             if (flags & NX_DEVICERALTKEYMASK) != 0 { "ralt" } else { "" },
+    );
+}
+
 ///  This callback will be registered to be invoked from the run loop
 ///  to which the event tap is added as a source.
 #[no_mangle]
 #[allow(unused_variables)]
 pub extern fn callback(proxy: Pointer, event_type: CGEventType, event: CGEventRef, key_maps: &mut MacOSKeyMaps)
                        -> CGEventRef {
-
+    //print_flags(event);
     /*
     println!("+++++++++++++++++++++++++++++++++++++++");
     let event_type2 = unsafe { CGEventGetType(event) };
     println!("event_type2: {}", event_type2);
 
 
-    let flags = unsafe { CGEventGetFlags(event) };
-    println!("flags: {}", flags);
-    println!("flags: {:#064b}", flags);
 
-    println!("EventFlagsChanged: {:x} ({} {} {} {} {} {} {} {})\n",
-           flags,
-    if (flags & NX_DEVICELCTLKEYMASK) != 0 { "lcontrol" } else { "" },
-    if (flags & NX_DEVICERCTLKEYMASK) != 0 { "rcontrol" } else { "" },
-    if (flags & NX_DEVICELSHIFTKEYMASK) != 0 { "lshift" } else { "" },
-    if (flags & NX_DEVICERSHIFTKEYMASK) != 0 { "rshift" } else { "" },
-    if (flags & NX_DEVICELCMDKEYMASK) != 0 { "lcommand" } else { "" },
-    if (flags & NX_DEVICERCMDKEYMASK) != 0 { "rcommand" } else { "" },
-    if (flags & NX_DEVICELALTKEYMASK) != 0 { "lalt" } else { "" },
-    if (flags & NX_DEVICERALTKEYMASK) != 0 { "ralt" } else { "" },
-    );
 
 
     match event_type {
@@ -491,22 +530,27 @@ pub extern fn callback(proxy: Pointer, event_type: CGEventType, event: CGEventRe
             event_type,
             event,
         };
-        /*
         println!("got keyCode: {}", input_event.code());
+        /*
         println!("---------------------------------------");
-        */
         if input_event.value() == KeyState::DOWN {
             let code = input_event.code();
             println!("KEY 0x{:04X}", code);
             write_key_file(code).expect("error writing key file");
         }
         std::ptr::null_mut()
+            */
+
+
         //input_event.event.set
         //input_event.event
         //Null.
         //Some(input_event.event)
-        //key_maps.send_event(&mut input_event, &DEVICE).expect("macos shouldn't error...")
-        //    .unwrap_or_else(|| std::ptr::null_mut()) // None means return NULL
+        key_maps.send_event(&mut input_event, &DEVICE).expect("macos shouldn't error...")
+            .unwrap_or_else(|| {
+                println!("returning NULL from hook");
+                std::ptr::null_mut()
+            }) // None means return NULL
         //let keyCode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
         //println!("got keyCode: {}", keyCode);
         /*

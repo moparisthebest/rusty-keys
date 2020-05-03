@@ -10,7 +10,7 @@ revert_keymap_index = 0
 
 # this is the default index to use when the program first starts
 # in this case, 2 means Unix Programmer Dvorak
-default_keymap_index = 1
+default_keymap_index = 2
 
 # these are the keymaps available, you can add as many as you want or re-order them, just be aware the mapping is
 # always done from the first one to all subsequent ones, so you probably want to leave QWERTY or similar up top
