@@ -1,6 +1,9 @@
 mod builder;
 pub use self::builder::Builder;
 
+pub mod codes;
+pub use codes::*;
+
 mod device;
 pub use self::device::Device;
 

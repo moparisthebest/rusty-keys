@@ -1,5 +1,7 @@
 
 use crate::*;
+
+use crate::linux::device::codes::*;
 use std::path::Path;
 
 pub mod device;
@@ -15,7 +17,6 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<device::Builder> {
     device::Builder::open(path)
 }
 
-use uinput_sys::*;
 use libc::input_event;
 use std::process::exit;
 use std::{env, thread};
@@ -300,7 +301,7 @@ fn get_keyboard_device_filenames() -> Vec<String> {
 pub fn key_map() -> HashMap<&'static str, u16> {
         [
             // generated like:
-            // grep -o 'KEY_[^ :;]*' ~/.cargo/registry/src/github.com-1ecc6299db9ec823/uinput-sys-0.1.3/src/events.rs | sed 's/^KEY_//' | awk '{print "(\""$1"\", KEY_"$1"),"}'
+            // grep -o 'KEY_[^ :;]*' ~/.cargo/registry/src/github.com-1ecc6299db9ec823/uinput-sys-0.1.3/src/codes | sed 's/^KEY_//' | awk '{print "(\""$1"\", KEY_"$1"),"}'
             ("RESERVED", KEY_RESERVED),
             ("ESC", KEY_ESC),
             ("1", KEY_1),

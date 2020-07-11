@@ -32,5 +32,4 @@ lazy_static = "1.4.0"
 [target.'cfg(target_os="linux")'.dependencies]
 libc = "0.2.62"
 nix = "0.15.0"
-uinput-sys = "0.1.7"
 inotify = { version = "0.7.0", default-features = false, features = [] }

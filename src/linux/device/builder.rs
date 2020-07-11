@@ -2,11 +2,52 @@ use std::path::Path;
 use std::{mem, slice};
 use std::ffi::CString;
 use libc::c_int;
-use nix::{self, fcntl, unistd, errno::Errno};
+use nix::{self, fcntl, unistd, errno::Errno, ioctl_write_ptr, ioctl_none};
 use nix::sys::stat;
-use uinput_sys::*;
+//use uinput_sys::*;
 use crate::{Result as Res, Device};
 use std::collections::hash_map::Values;
+use std::os::raw::c_char;
+
+use crate::linux::device::codes::*;
+
+/*
+uin!(write ui_set_evbit   with b'U', 100; c_int);
+uin!(write ui_set_keybit  with b'U', 101; c_int);
+
+ioctl!(none ui_dev_create with b'U', 1);
+
+ioctl!(none ui_dev_destroy with b'U', 2);
+*/
+
+ioctl_write_ptr!(ui_set_evbit, b'U', 100, c_int);
+ioctl_write_ptr!(ui_set_keybit, b'U', 101, c_int);
+ioctl_none!(ui_dev_create, b'U', 1);
+
+pub const UINPUT_MAX_NAME_SIZE: c_int = 80;
+pub const ABS_MAX: c_int = 0x3f;
+pub const ABS_CNT: c_int = ABS_MAX + 1;
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct input_id {
+	pub bustype: u16,
+	pub vendor:  u16,
+	pub product: u16,
+	pub version: u16,
+}
+
+#[repr(C)]
+pub struct uinput_user_dev {
+	pub name: [c_char; UINPUT_MAX_NAME_SIZE as usize],
+	pub id:   input_id,
+
+	pub ff_effects_max: u32,
+	pub absmax:  [i32; ABS_CNT as usize],
+	pub absmin:  [i32; ABS_CNT as usize],
+	pub absfuzz: [i32; ABS_CNT as usize],
+	pub absflat: [i32; ABS_CNT as usize],
+}
 
 /// Device builder.
 pub struct Builder {
@@ -75,10 +116,14 @@ impl Builder {
 		unsafe {
 			//try!(Errno::result(ui_set_evbit(self.fd, EV_KEY)));
 			//try!(Errno::result(ui_set_keybit(self.fd, KEY_H)));
-			Errno::result(ui_set_evbit(self.fd, EV_KEY as i32))?;
+
+			//Errno::result(ui_set_evbit(self.fd, EV_KEY as *const c_int))?;
+
+			ui_set_evbit(self.fd, EV_KEY as *const c_int)?;
+
 			//ui_set_keybit(self.fd, KEY_H as *const c_int)?;
 			for key_code in key_codes {
-				Errno::result(ui_set_keybit(self.fd, *key_code as i32))?;
+				ui_set_keybit(self.fd, *key_code as *const c_int)?;
 			}
 			//try!(ui_set_keybit(self.fd, &KEY_H));
 		}
@@ -260,7 +305,7 @@ impl Builder {
 			unistd::write(self.fd, slice::from_raw_parts(ptr, size))?;
 			//todo: try!(Errno::result(ui_dev_create(self.fd)));
 			// try1: Errno::result(ui_dev_create(self.fd)).unwrap();
-			Errno::result(ui_dev_create(self.fd))?;
+			ui_dev_create(self.fd)?;
 		}
 
 		Ok(Device::new(self.fd))

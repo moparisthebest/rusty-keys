@@ -1,8 +1,11 @@
 use std::{mem, ptr, slice};
 use libc::{timeval, gettimeofday, input_event, c_int};
-use nix::{unistd, errno::Errno};
-use uinput_sys::*;
+use nix::{unistd, ioctl_none};
 use crate::{Result as Res};
+
+use crate::linux::device::codes::*;
+
+ioctl_none!(ui_dev_destroy, b'U', 2);
 
 /// The virtual device.
 pub struct Device {
@@ -80,7 +83,7 @@ impl Device {
 impl Drop for Device {
 	fn drop(&mut self) {
 		unsafe {
-			Errno::result(ui_dev_destroy(self.fd)).unwrap();
+			ui_dev_destroy(self.fd).unwrap();
 		}
 	}
 }
