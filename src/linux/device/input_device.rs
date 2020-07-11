@@ -8,8 +8,7 @@ use crate::{Error,Result};
 
 ioctl_write_ptr!(eviocgrab, b'E', 0x90, c_int);
 
-// TODO: use size_of_input_event instead of hard-coding 24.
-const SIZE_OF_INPUT_EVENT: usize = 24;//mem::size_of::<input_event>();
+const SIZE_OF_INPUT_EVENT: usize = mem::size_of::<input_event>();
 
 pub struct InputDevice {
     device_file: File,
