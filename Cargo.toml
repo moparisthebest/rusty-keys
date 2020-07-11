@@ -22,14 +22,14 @@ include = [
 
 [dependencies]
 getopts = "0.2.21"
-toml = "0.5.3"
-serde = { version = "1.0.101", features = ["derive"] }
+toml = "0.5.6"
+serde = { version = "1.0.114", features = ["derive"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "wincon"] }
+winapi = { version = "0.3.9", features = ["winuser", "wincon"] }
 lazy_static = "1.4.0"
 
 [target.'cfg(target_os="linux")'.dependencies]
-libc = "0.2.62"
-nix = "0.15.0"
-inotify = { version = "0.7.0", default-features = false, features = [] }
+libc = "0.2.72"
+nix = "0.17.0"
+inotify = { version = "0.8.3", default-features = false, features = [] }
