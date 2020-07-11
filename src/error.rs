@@ -62,32 +62,22 @@ impl From<mpsc::SendError<libc::input_event>> for Error {
 
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-		f.write_str(error::Error::description(self))
-	}
-}
-
-impl error::Error for Error {
-	fn description(&self) -> &str {
 		match self {
 			#[cfg(target_os = "linux")]
-			&Error::Nix(ref err) =>
-				err.description(),
+			&Error::Nix(ref err) => err.fmt(f),
 
-			&Error::Nul(ref err) =>
-				err.description(),
+			&Error::Nul(ref err) => err.fmt(f),
 
-			&Error::Io(ref err) =>
-				err.description(),
+			&Error::Io(ref err) => err.fmt(f),
 
 			#[cfg(target_os = "linux")]
-			&Error::Send(ref err) =>
-				err.description(),
+			&Error::Send(ref err) => err.fmt(f),
 
-			&Error::NotFound =>
-				"Device not found.",
+			&Error::NotFound => f.write_str("Device not found."),
 
-			&Error::ShortRead =>
-				"Error while reading from device file.",
+			&Error::ShortRead => f.write_str("Error while reading from device file."),
 		}
 	}
 }
+
+impl error::Error for Error {}
