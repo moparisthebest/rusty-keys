@@ -1,5 +1,8 @@
 rusty-keys
-======
+==========
+
+[![Build Status](https://ci.moparisthe.best/job/moparisthebest/job/rusty-keys/job/master/badge/icon%3Fstyle=plastic)](https://ci.moparisthe.best/job/moparisthebest/job/rusty-keys/job/master/)
+
 uinput level keyboard mapper for linux, with advanced caps lock and shift swapping behavior
 
 This is the only keymapper I am aware of capable of implementing this layout:  
