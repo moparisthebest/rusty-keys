@@ -288,7 +288,11 @@ fn get_keyboard_device_filenames() -> Vec<String> {
                     let last_index = line[event_index..line.len()-1].find(" ").and_then(|i| Some(i + event_index)).unwrap_or(line.len() - 1);
                     filename = Some(line[event_index..last_index].to_owned());
                 }
-            } else if line.starts_with("B: EV=") && line.contains("120013") {
+                // the following line checked for only 120013 for years, which works across every device I've tested, dozens at least
+                // until I bought a Monoprice Dark Matter Aether keyboard which presents 2 keyboard devices, one with 120013,
+                // another with 100013 the one with 120013 can only be read from a few times before it stops sending events, then events
+                // start coming from 100013, if I lock+read them both, it *just works* as expected... buggy keyboard firmware or ?
+            } else if line.starts_with("B: EV=") && (line.contains("120013") || line.contains("100013")) {
                 if let Some(ref filename) = filename {
                     filenames.push(filename.clone());
                 }
