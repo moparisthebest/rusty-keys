@@ -3,9 +3,9 @@
 # ie, in this case pressing both and 0 would go QWERTY, while both and 1 would go dvorak
 switch_layout_keys = ['LEFTSHIFT','RIGHTSHIFT']
 
-# pressing QWERTY reverts to the index specified in revert_keymap_index for only the duration of the pressing
+# pressing any of these keys reverts to the index specified in revert_keymap_index for only the duration of the pressing
 # used so QWERTY shortcuts like Ctrl+C still work
-revert_default_key = 'LEFTCTRL'
+revert_default_keys = ['LCTL','LGUI','LALT']
 revert_keymap_index = 0
 
 # this is the default index to use when the program first starts

@@ -63,7 +63,7 @@ pub struct KeyMaps<K, T, E, R = ()>
     keymap_index_keys: HashMap<T, usize>,
     switch_layout_keys: Vec<usize>,
     key_state: [bool; KEY_MAX],
-    revert_default_key: T,
+    revert_default_keys: Vec<T>,
     revert_keymap_index: usize,
     // above do not change, below does
     chosen_keymap_index: usize,
@@ -173,13 +173,27 @@ impl<K, T, E, R> KeyMaps<K, T, E, R>
         //println!("keymaps: {:?}", keymaps);
         //println!("keymap_index_keys: {:?}", keymap_index_keys);
 
+        let mut revert_default_keys = Vec::new();
+        if config.revert_default_key.is_some() {
+            revert_default_keys.push(parse_key(key_map, &config.revert_default_key.unwrap()));
+        }
+        if config.revert_default_keys.is_some() {
+            for revert_default_key in config.revert_default_keys.unwrap() {
+                let revert_default_key = parse_key(key_map, &revert_default_key);
+                if !revert_default_keys.contains(&revert_default_key) {
+                    revert_default_keys.push(revert_default_key);
+                }
+            }
+        }
+        // revert_default_keys may be empty, but that's ok
+
         KeyMaps {
             keymaps: keymaps,
             keymap_index_keys: keymap_index_keys,
             switch_layout_keys: config.switch_layout_keys.iter().map(|k| parse_key(key_map, k).into()).collect(),
             key_state: [false; KEY_MAX],
             // todo: detect key state? at least CAPSLOCK...
-            revert_default_key: parse_key(key_map, &config.revert_default_key),
+            revert_default_keys,
             revert_keymap_index: config.revert_keymap_index,
             chosen_keymap_index: config.default_keymap_index,
             current_keymap_index: config.default_keymap_index,
@@ -217,7 +231,7 @@ pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
                     return device.block_key(); // we don't want to also send this keypress, so bail
                 }
             }
-        if event.code() == self.revert_default_key {
+        if self.revert_default_keys.contains(&event.code()) {
             match value {
                     // todo: ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released... fix that...
                 KeyState::DOWN => self.current_keymap_index = self.revert_keymap_index,
@@ -445,7 +459,8 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct KeymapConfig {
     switch_layout_keys: Vec<String>,
-    revert_default_key: String,
+    revert_default_key: Option<String>,
+    revert_default_keys: Option<Vec<String>>,
     revert_keymap_index: usize,
     default_keymap_index: usize,
     keymaps: Vec<String>
