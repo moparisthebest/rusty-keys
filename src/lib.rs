@@ -1,5 +1,6 @@
 #![recursion_limit = "1000"]
 
+pub const NAME: &'static str = env!("CARGO_PKG_NAME");
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub mod error;

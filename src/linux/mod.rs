@@ -23,6 +23,8 @@ use std::{env, thread};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
+const INPUT_FOLDER: &str = "/dev/input/";
+
 // 1 is down, 0 is up
 const DOWN: i32 = 1;
 const UP: i32 = 0;
@@ -123,7 +125,7 @@ pub fn main_res() -> Result<()> {
     let device = open("/dev/uinput")
         .or_else(|_| open("/dev/input/uinput"))
         .or_else(|_| default())?
-        .name("rusty-keys")?
+        .name(NAME)?
         .event(key_map.values())?
         .create()?;
 
@@ -161,7 +163,7 @@ pub fn main_res() -> Result<()> {
                 // we want to wait forever starting new threads for any new keyboard devices
                 let mut inotify = Inotify::init().expect("Failed to initialize inotify");
 
-                inotify.add_watch("/dev/input/", WatchMask::CREATE).expect("Failed to add inotify watch");
+                inotify.add_watch(INPUT_FOLDER, WatchMask::CREATE).expect("Failed to add inotify watch");
 
                 let device_files = get_keyboard_device_filenames();
                 println!("Detected devices: {:?}", device_files);
@@ -178,12 +180,14 @@ pub fn main_res() -> Result<()> {
                             if !event.mask.contains(EventMask::ISDIR) {
                                 if let Some(device_file) = event.name.and_then(|name|name.to_str()) {
                                     // check if this is an eligible keyboard device
-                                    let device_files = get_keyboard_device_filenames();
-                                    if !device_files.contains(&device_file.to_string()) {
-                                        continue;
+                                    let mut path = std::path::PathBuf::new();
+                                    path.push(INPUT_FOLDER);
+                                    path.push(device_file);
+
+                                    if valid_keyboard_device(path) {
+                                        println!("starting mapping thread for: {}", device_file);
+                                        inotify_spawn_thread(&tx, device_file.clone());
                                     }
-                                    println!("starting mapping thread for: {}", device_file);
-                                    inotify_spawn_thread(&tx, device_file.clone());
                                 }
                             }
                         }
@@ -210,7 +214,7 @@ fn send_event(key_map: &mut LinuxKeyMaps, mut event: input_event, device: &Devic
 }
 
 fn inotify_spawn_thread(tx: &Sender<input_event>, device_file: &str) {
-    let mut filename = "/dev/input/".to_string();
+    let mut filename = INPUT_FOLDER.to_string();
     filename.push_str(&device_file);
     let tx = tx.clone();
     thread::spawn(move || {
@@ -256,7 +260,7 @@ fn parse_args() -> Config {
     }
 
     if matches.opt_present("v") {
-        println!("rusty-keys {}", VERSION);
+        println!("{} {}", NAME, VERSION);
         exit(0);
     }
 
@@ -265,41 +269,69 @@ fn parse_args() -> Config {
     Config::new(matches.free, config_file)
 }
 
-// Detects and returns the name of the keyboard device file. This function uses
-// the fact that all device information is shown in /proc/bus/input/devices and
-// the keyboard device file should always have an EV of 120013
-// grep -E 'Handlers|EV' /proc/bus/input/devices | grep -B1 120013 | grep -Eo event[0-9]+
-fn get_keyboard_device_filenames() -> Vec<String> {
-    use std::io::BufReader;
-    use std::io::prelude::*;
-    use std::fs::File;
+nix::ioctl_read_buf!(eviocgname, b'E', 0x06, u8);
+nix::ioctl_read_buf!(eviocgbit, b'E', 0x20, u8);
+nix::ioctl_read_buf!(eviocgbit_ev_key, b'E', 0x20 + EV_KEY, u8);
 
-    let f = File::open("/proc/bus/input/devices");
-    if f.is_err() {
-        return Vec::new();
+fn valid_keyboard_device_res<P: AsRef<Path>>(path: P) -> Result<bool> {
+    use std::fs::File;
+    use std::os::unix::fs::FileTypeExt;
+    use std::os::unix::io::AsRawFd;
+
+    let device_file = File::open(path)?;
+
+    // must be a character device
+    if !device_file.metadata()?.file_type().is_char_device() {
+        return Ok(false);
     }
-    let f = BufReader::new(f.unwrap());
-    let mut filename = None;
-    let mut filenames = Vec::new();
-    for line in f.lines() {
-        if let Ok(line) = line {
-            if line.starts_with("H: Handlers=") {
-                if let Some(event_index) = line.find("event") {
-                    let last_index = line[event_index..line.len()-1].find(" ").and_then(|i| Some(i + event_index)).unwrap_or(line.len() - 1);
-                    filename = Some(line[event_index..last_index].to_owned());
-                }
-                // the following line checked for only 120013 for years, which works across every device I've tested, dozens at least
-                // until I bought a Monoprice Dark Matter Aether keyboard which presents 2 keyboard devices, one with 120013,
-                // another with 100013 the one with 120013 can only be read from a few times before it stops sending events, then events
-                // start coming from 100013, if I lock+read them both, it *just works* as expected... buggy keyboard firmware or ?
-            } else if line.starts_with("B: EV=") && (line.contains("120013") || line.contains("100013")) {
-                if let Some(ref filename) = filename {
-                    filenames.push(filename.clone());
+
+    // does it support EV_KEY
+    let mut evbit = [0u8; 8];
+    unsafe {
+        eviocgbit(device_file.as_raw_fd(), &mut evbit)?;
+    };
+    let evbit = u64::from_ne_bytes(evbit);
+    if (evbit & (1 << EV_KEY)) == 0 {
+        return Ok(false);
+    }
+
+    // does it support KEY_A ? todo: check other keys ?
+    let mut key_bits = [0u8; (KEY_MAX as usize / 8) + 1];
+    unsafe {
+        eviocgbit_ev_key(device_file.as_raw_fd(), &mut key_bits)?;
+    };
+    if (key_bits[KEY_A as usize / 8] & (1 << (KEY_A % 8))) == 0 {
+        return Ok(false);
+    }
+
+    // is it another running copy of rusty-keys ?
+    let mut name = [0u8; NAME.len()];
+    unsafe {
+        eviocgname(device_file.as_raw_fd(), &mut name)?
+    };
+    if NAME.as_bytes() == &name {
+        return Ok(false);
+    }
+    return Ok(true);
+}
+
+fn valid_keyboard_device<P: AsRef<Path>>(path: P) -> bool {
+    valid_keyboard_device_res(path).unwrap_or(false)
+}
+
+fn get_keyboard_device_filenames() -> Vec<String> {
+    let mut res = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(INPUT_FOLDER) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                if valid_keyboard_device(entry.path()) {
+                    // these unwrap()'s should not be able to fail if valid_keyboard_device() returns true
+                    res.push(entry.path().file_name().unwrap().to_str().unwrap().to_owned());
                 }
             }
         }
     }
-    filenames
+    res
 }
 
 pub fn key_map() -> HashMap<&'static str, u16> {
@@ -612,3 +644,4 @@ pub fn key_map() -> HashMap<&'static str, u16> {
             ("PENT", KEY_KPENTER),
         ].iter().cloned().map(|(m, v)| (m, v as u16)).collect()
     }
+
