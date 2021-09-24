@@ -1,7 +1,7 @@
 use std::{mem, ptr, slice};
 use libc::{timeval, gettimeofday, input_event, c_int};
 use nix::{unistd, ioctl_none};
-use crate::{Result as Res};
+use crate::Result;
 
 use crate::linux::device::codes::*;
 
@@ -21,7 +21,7 @@ impl Device {
 	}
 
 	#[doc(hidden)]
-	pub fn write(&self, kind: c_int, code: c_int, value: c_int) -> Res<()> {
+	pub fn write(&self, kind: c_int, code: c_int, value: c_int) -> Result<()> {
 		let mut event = input_event {
 			time:  timeval { tv_sec: 0, tv_usec: 0 },
 			type_:  kind as u16,
@@ -33,7 +33,7 @@ impl Device {
 	}
 
 	#[doc(hidden)]
-	pub fn write_event(&self, event: &mut input_event) -> Res<()> {
+	pub fn write_event(&self, event: &mut input_event) -> Result<()> {
 		unsafe {
 			gettimeofday(&mut event.time, ptr::null_mut());
 
@@ -47,35 +47,33 @@ impl Device {
 	}
 
 	/// Synchronize the device.
-	pub fn synchronize(&self) -> Res<()> {
+	pub fn synchronize(&self) -> Result<()> {
 		self.write(EV_SYN, SYN_REPORT, 0)
 	}
 
 	/// Send an event.
-	pub fn send(&self, kind: c_int, code: c_int, value: i32) -> Res<()> {
+	pub fn send(&self, kind: c_int, code: c_int, value: i32) -> Result<()> {
 		self.write(kind, code, value)
 	}
 
 	/// Send a press event.
-	pub fn press(&self, kind: c_int, code: c_int) -> Res<()> {
+	pub fn press(&self, kind: c_int, code: c_int) -> Result<()> {
 		self.write(kind, code, 1)
 	}
 
 	/// Send a release event.
-	pub fn release(&self, kind: c_int, code: c_int) -> Res<()> {
+	pub fn release(&self, kind: c_int, code: c_int) -> Result<()> {
 		self.write(kind, code, 0)
 	}
 
 	/// Send a press and release event.
-	pub fn click(&self, kind: c_int, code: c_int) -> Res<()> {
+	pub fn click(&self, kind: c_int, code: c_int) -> Result<()> {
 		self.press(kind, code)?;
-		self.release(kind, code)?;
-
-		Ok(())
+		self.release(kind, code)
 	}
 
 	/// Send a relative or absolute positioning event.
-	pub fn position(&self, kind: c_int, code: c_int, value: i32) -> Res<()> {
+	pub fn position(&self, kind: c_int, code: c_int, value: i32) -> Result<()> {
 		self.write(kind, code, value)
 	}
 }
@@ -83,7 +81,8 @@ impl Device {
 impl Drop for Device {
 	fn drop(&mut self) {
 		unsafe {
-			ui_dev_destroy(self.fd).unwrap();
+			// ignore error here so as to not panic in a drop
+			ui_dev_destroy(self.fd).ok();
 		}
 	}
 }

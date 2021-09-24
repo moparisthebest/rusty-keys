@@ -2,20 +2,9 @@
 use crate::*;
 
 use crate::linux::device::codes::*;
-use std::path::Path;
 
 pub mod device;
-pub use device::{Device,InputDevice};
-
-/// Open the default uinput device.
-pub fn default() -> Result<device::Builder> {
-    device::Builder::default()
-}
-
-/// Open the specified uinput device.
-pub fn open<P: AsRef<Path>>(path: P) -> Result<device::Builder> {
-    device::Builder::open(path)
-}
+pub use device::{Device,InputDevice, Builder};
 
 use libc::input_event;
 use std::process::exit;
@@ -117,9 +106,9 @@ pub fn main_res() -> Result<()> {
     let key_map = key_map();
     //println!("key_map: {:?}", key_map);
 
-    let device = open("/dev/uinput")
-        .or_else(|_| open("/dev/input/uinput"))
-        .or_else(|_| default())?
+    let device = Builder::open("/dev/uinput")
+        .or_else(|_| Builder::open("/dev/input/uinput"))
+        .or_else(|_| Builder::default())?
         .name(NAME)?
         .event(key_map.values())?
         .create()?;

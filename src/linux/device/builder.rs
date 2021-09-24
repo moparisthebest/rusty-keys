@@ -4,21 +4,11 @@ use std::ffi::CString;
 use libc::c_int;
 use nix::{self, fcntl, unistd, ioctl_write_ptr, ioctl_none};
 use nix::sys::stat;
-//use uinput_sys::*;
-use crate::{Result as Res, Device};
+use crate::{Result, Device};
 use std::collections::hash_map::Values;
 use std::os::raw::c_char;
 
 use crate::linux::device::codes::*;
-
-/*
-uin!(write ui_set_evbit   with b'U', 100; c_int);
-uin!(write ui_set_keybit  with b'U', 101; c_int);
-
-ioctl!(none ui_dev_create with b'U', 1);
-
-ioctl!(none ui_dev_destroy with b'U', 2);
-*/
 
 ioctl_write_ptr!(ui_set_evbit, b'U', 100, c_int);
 ioctl_write_ptr!(ui_set_keybit, b'U', 101, c_int);
@@ -58,7 +48,7 @@ pub struct Builder {
 
 impl Builder {
 	/// Create a builder from the specified path.
-	pub fn open<P: AsRef<Path>>(path: P) -> Res<Self> {
+	pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
 		Ok(Builder {
 			fd:  fcntl::open(path.as_ref(), fcntl::OFlag::O_WRONLY | fcntl::OFlag::O_NONBLOCK, stat::Mode::empty())?,
 			def: unsafe { mem::zeroed() },
@@ -67,12 +57,12 @@ impl Builder {
 	}
 
 	/// Create a builder from `/dev/uinput`.
-	pub fn default() -> Res<Self> {
+	pub fn default() -> Result<Self> {
 		Builder::open("/dev/uinput")
 	}
 
 	/// Set the name.
-	pub fn name<T: AsRef<str>>(mut self, value: T) -> Res<Self> {
+	pub fn name<T: AsRef<str>>(mut self, value: T) -> Result<Self> {
 		let string = CString::new(value.as_ref())?;
 		let bytes  = string.as_bytes_with_nul();
 
@@ -110,168 +100,18 @@ impl Builder {
 		self
 	}
 
-	pub fn event(mut self, key_codes: Values<&str, u16>) -> Res<Self> {
+	pub fn event(mut self, key_codes: Values<&str, u16>) -> Result<Self> {
 		self.abs = None;
-		//let test_ev_key : c_int = EV_KEY as c_int;
 		unsafe {
-			//try!(Errno::result(ui_set_evbit(self.fd, EV_KEY)));
-			//try!(Errno::result(ui_set_keybit(self.fd, KEY_H)));
-
-			//Errno::result(ui_set_evbit(self.fd, EV_KEY as *const c_int))?;
-
 			ui_set_evbit(self.fd, EV_KEY as *const c_int)?;
 
-			//ui_set_keybit(self.fd, KEY_H as *const c_int)?;
 			for key_code in key_codes {
 				ui_set_keybit(self.fd, *key_code as *const c_int)?;
 			}
-			//try!(ui_set_keybit(self.fd, &KEY_H));
 		}
 		Ok(self)
 	}
-/*
-	/// Enable the given event.
-	pub fn event<T: Into<Event>>(mut self, value: T) -> Res<Self> {
-		self.abs = None;
 
-		match value.into() {
-			Event::All => {
-				try!(self.event(Event::Keyboard(event::Keyboard::All)))
-					.event(Event::Controller(event::Controller::All))
-			}
-
-			Event::Keyboard(value) => {
-				match value {
-					event::Keyboard::All => {
-						let mut builder = self;
-
-						for item in event::keyboard::Key::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::KeyPad::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::Misc::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::InputAssist::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::Function::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::Braille::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::Numeric::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::TouchPad::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::Camera::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::keyboard::Attendant::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						Ok(builder)
-					}
-
-					value => {
-						unsafe {
-							try!(Errno::result(ui_set_evbit(self.fd, value.kind())));
-							try!(Errno::result(ui_set_keybit(self.fd, value.code())));
-						}
-
-						Ok(self)
-					}
-				}
-			}
-
-			Event::Controller(value) => {
-				match value {
-					event::Controller::All => {
-						let mut builder = self;
-
-						for item in event::controller::Misc::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::controller::Mouse::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::controller::JoyStick::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::controller::GamePad::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::controller::Digi::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::controller::Wheel::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::controller::DPad::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						for item in event::controller::TriggerHappy::iter_variants() {
-							builder = try!(builder.event(item));
-						}
-
-						Ok(builder)
-					}
-
-					value => {
-						unsafe {
-							try!(Errno::result(ui_set_evbit(self.fd, value.kind())));
-							try!(Errno::result(ui_set_keybit(self.fd, value.code())));
-						}
-
-						Ok(self)
-					}
-				}
-			}
-
-			Event::Relative(value) => {
-				unsafe {
-					try!(Errno::result(ui_set_evbit(self.fd, value.kind())));
-					try!(Errno::result(ui_set_relbit(self.fd, value.code())));
-				}
-
-				Ok(self)
-			}
-
-			Event::Absolute(value) => {
-				unsafe {
-					try!(Errno::result(ui_set_evbit(self.fd, value.kind())));
-					try!(Errno::result(ui_set_absbit(self.fd, value.code())));
-				}
-
-				self.abs = Some(value.code());
-
-				Ok(self)
-			}
-		}
-	}
-*/
 	/// Set the maximum value for the previously enabled absolute event.
 	pub fn max(mut self, value: i32) -> Self {
 		self.def.absmax[self.abs.unwrap() as usize] = value;
@@ -297,14 +137,12 @@ impl Builder {
 	}
 
 	/// Create the defined device.
-	pub fn create(self) -> Res<Device> {
+	pub fn create(self) -> Result<Device> {
 		unsafe {
 			let ptr  = &self.def as *const _ as *const u8;
 			let size = mem::size_of_val(&self.def);
 
 			unistd::write(self.fd, slice::from_raw_parts(ptr, size))?;
-			//todo: try!(Errno::result(ui_dev_create(self.fd)));
-			// try1: Errno::result(ui_dev_create(self.fd)).unwrap();
 			ui_dev_create(self.fd)?;
 		}
 
