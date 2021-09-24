@@ -5,8 +5,10 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use libc::{input_event, c_int};
 use nix::{ioctl_write_ptr, ioctl_read_buf};
-use epoll::ControlOptions::{EPOLL_CTL_ADD, EPOLL_CTL_DEL};
 use nix::fcntl::{OFlag, fcntl, FcntlArg};
+
+#[cfg(feature = "epoll_inotify")]
+use epoll::ControlOptions::{EPOLL_CTL_ADD, EPOLL_CTL_DEL};
 
 use crate::{Error,Result};
 use crate::linux::{EV_KEY, KEY_MAX, NAME, KEY_W, KEY_A, KEY_S, KEY_D};
@@ -105,6 +107,7 @@ impl InputDevice {
         Ok(())
     }
     
+    #[cfg(feature = "epoll_inotify")]
     pub fn epoll_add(mut self, epoll_fd: RawFd, data: u64) -> Result<Self> {
         if None != self.epoll_fd {
             return Err(Error::EpollAlreadyAdded);
@@ -122,6 +125,7 @@ impl InputDevice {
         Ok(self)
     }
 
+    #[cfg(feature = "epoll_inotify")]
     pub fn epoll_del(&mut self) -> Result<&mut Self> {
         if let Some(epoll_fd) = self.epoll_fd {
             // set this to None first, if we end up returning an Err early, we can't do anything else anyway...
@@ -137,6 +141,7 @@ impl Drop for InputDevice {
     fn drop(&mut self) {
         // ignore any errors here, what could we do anyhow?
         self.release().ok();
+        #[cfg(feature = "epoll_inotify")]
         self.epoll_del().ok();
     }
 }

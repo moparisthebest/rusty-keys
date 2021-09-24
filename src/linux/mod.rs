@@ -9,6 +9,7 @@ pub use device::{Device,InputDevice, Builder};
 use libc::input_event;
 use std::process::exit;
 use std::env;
+use std::collections::HashMap;
 
 const INPUT_FOLDER: &str = "/dev/input/";
 
@@ -17,12 +18,6 @@ const DOWN: i32 = 1;
 const UP: i32 = 0;
 
 use getopts::Options;
-
-use inotify::{
-    Inotify,
-    WatchMask,
-};
-use std::collections::HashMap;
 
 const EV_KEY_U16: u16 = EV_KEY as u16;
 
@@ -127,87 +122,96 @@ pub fn main_res() -> Result<()> {
             send_event(&mut key_map, event, &device)?
         }
     } else {
-        let epoll_fd = epoll::create(true)?;
-        const INOTIFY_DATA: u64 = u64::max_value();
+        #[cfg(not(feature = "epoll_inotify"))]
+        panic!("without epoll_inotify feature, only exactly 1 device is supported");
 
-        let (device_files, mut inotify) = if config.device_files.len() > 0 {
-            // we operate on exactly the devices sent in and never watch for new devices
-            (config.device_files.iter().map(|device_file| InputDevice::open(&device_file).expect("device_file does not exist!")).collect(), None)
-        } else {
-            use std::os::unix::io::AsRawFd;
-            // we want to wait forever starting new threads for any new keyboard devices
-            // there is a slight race condition here, if a keyboard is plugged in between the time we
-            // enumerate the devices and set up the inotify watch, we'll miss it, doing it the other way
-            // can bring duplicates though, todo: think about this...
-            let device_files = get_keyboard_devices();
-            let mut inotify = Inotify::init()?;
-            inotify.add_watch(INPUT_FOLDER, WatchMask::CREATE)?;
-            let epoll_event = epoll::Event::new(epoll::Events::EPOLLIN | epoll::Events::EPOLLET, INOTIFY_DATA);
-            epoll::ctl(epoll_fd, epoll::ControlOptions::EPOLL_CTL_ADD, inotify.as_raw_fd(), epoll_event)?;
-            (device_files, Some(inotify))
-        };
-        let mut input_devices = Vec::with_capacity(device_files.len());
-        for (idx, device_file) in device_files.into_iter().enumerate() {
-            input_devices.push(Some(device_file.grab()?.epoll_add(epoll_fd, idx as u64)?));
-        }
+        #[cfg(feature = "epoll_inotify")]
+            {
+                use inotify::{Inotify, WatchMask};
 
-        let mut epoll_buf = [epoll::Event::new(epoll::Events::empty(), 0); 4];
-        let mut inotify_buf = [0u8; 256];
+                let epoll_fd = epoll::create(true)?;
+                const INOTIFY_DATA: u64 = u64::max_value();
 
-        loop {
-            let num_events = epoll::wait(epoll_fd, -1, &mut epoll_buf)?;
-            for event in &epoll_buf[0..num_events] {
-                let idx = event.data as usize;
-                if let Some(Some(input_device)) = &mut input_devices.get_mut(idx) {
-                    loop {
-                        match input_device.read_event(&mut input_event_buf) {
-                            Ok(event) => {
-                                //println!("input event: {:?}", event);
-                                send_event(&mut key_map, event, &device)?
-                            }
-                            Err(err) => {
-                                if let Error::Io(ref err) = err {
-                                    if err.kind() == std::io::ErrorKind::WouldBlock {
-                                        // go back to epoll event loop
+                let (device_files, mut inotify) = if config.device_files.len() > 0 {
+                    // we operate on exactly the devices sent in and never watch for new devices
+                    (config.device_files.iter().map(|device_file| InputDevice::open(&device_file).expect("device_file does not exist!")).collect(), None)
+                } else {
+                    use std::os::unix::io::AsRawFd;
+                    // we want to wait forever starting new threads for any new keyboard devices
+                    // there is a slight race condition here, if a keyboard is plugged in between the time we
+                    // enumerate the devices and set up the inotify watch, we'll miss it, doing it the other way
+                    // can bring duplicates though, todo: think about this...
+                    let device_files = get_keyboard_devices();
+                    let mut inotify = Inotify::init()?;
+                    inotify.add_watch(INPUT_FOLDER, WatchMask::CREATE)?;
+                    let epoll_event = epoll::Event::new(epoll::Events::EPOLLIN | epoll::Events::EPOLLET, INOTIFY_DATA);
+                    epoll::ctl(epoll_fd, epoll::ControlOptions::EPOLL_CTL_ADD, inotify.as_raw_fd(), epoll_event)?;
+                    (device_files, Some(inotify))
+                };
+                let mut input_devices = Vec::with_capacity(device_files.len());
+                for (idx, device_file) in device_files.into_iter().enumerate() {
+                    input_devices.push(Some(device_file.grab()?.epoll_add(epoll_fd, idx as u64)?));
+                }
+
+                let mut epoll_buf = [epoll::Event::new(epoll::Events::empty(), 0); 4];
+                let mut inotify_buf = [0u8; 256];
+
+                loop {
+                    let num_events = epoll::wait(epoll_fd, -1, &mut epoll_buf)?;
+                    for event in &epoll_buf[0..num_events] {
+                        let idx = event.data as usize;
+                        if let Some(Some(input_device)) = &mut input_devices.get_mut(idx) {
+                            loop {
+                                match input_device.read_event(&mut input_event_buf) {
+                                    Ok(event) => {
+                                        //println!("input event: {:?}", event);
+                                        send_event(&mut key_map, event, &device)?
+                                    }
+                                    Err(err) => {
+                                        if let Error::Io(ref err) = err {
+                                            if err.kind() == std::io::ErrorKind::WouldBlock {
+                                                // go back to epoll event loop
+                                                break;
+                                            }
+                                        }
+                                        // otherwise it's some other error, don't read anything from this again
+                                        println!("input err: {:?}", err);
+                                        // remove it from input_devices and drop it
+                                        let _ = std::mem::replace(&mut input_devices[idx], None);
+                                        if inotify.is_none() {
+                                            // if we aren't watching with inotify, and the last device is removed (Vec only has None's in it), exit the program
+                                            if input_devices.iter().all(|id| id.is_none()) {
+                                                println!("last device went away, exiting...");
+                                                return Ok(());
+                                            }
+                                        }
                                         break;
                                     }
                                 }
-                                // otherwise it's some other error, don't read anything from this again
-                                println!("input err: {:?}", err);
-                                // remove it from input_devices and drop it
-                                let _ = std::mem::replace(&mut input_devices[idx], None);
-                                if inotify.is_none() {
-                                    // if we aren't watching with inotify, and the last device is removed (Vec only has None's in it), exit the program
-                                    if input_devices.iter().all(|id| id.is_none()) {
-                                        println!("last device went away, exiting...");
-                                        return Ok(());
-                                    }
-                                }
-                                break;
                             }
-                        }
-                    }
-                } else if event.data == INOTIFY_DATA {
-                    if let Some(inotify) = &mut inotify {
-                        for event in inotify.read_events(&mut inotify_buf)? {
-                            if let Some(device_file) = event.name.and_then(|name| name.to_str()) {
-                                // check if this is an eligible keyboard device
-                                let mut path = std::path::PathBuf::new();
-                                path.push(INPUT_FOLDER);
-                                path.push(device_file);
-                                
-                                if let Ok(input_device) = InputDevice::open(path).and_then(|id|id.valid_keyboard_device()) {
-                                    println!("starting mapping for new keyboard: {}", device_file);
+                        } else if event.data == INOTIFY_DATA {
+                            if let Some(inotify) = &mut inotify {
+                                for event in inotify.read_events(&mut inotify_buf)? {
+                                    if let Some(device_file) = event.name.and_then(|name| name.to_str()) {
+                                        // check if this is an eligible keyboard device
+                                        let mut path = std::path::PathBuf::new();
+                                        path.push(INPUT_FOLDER);
+                                        path.push(device_file);
 
-                                    let idx = input_devices.iter().position(|id| id.is_none()).unwrap_or(input_devices.len());
+                                        if let Ok(input_device) = InputDevice::open(path).and_then(|id| id.valid_keyboard_device()) {
+                                            println!("starting mapping for new keyboard: {}", device_file);
 
-                                    let input_device = input_device.grab()?.epoll_add(epoll_fd, idx as u64)?;
+                                            let idx = input_devices.iter().position(|id| id.is_none()).unwrap_or(input_devices.len());
 
-                                    if idx == input_devices.len() {
-                                        input_devices.push(Some(input_device));
-                                    } else {
-                                        // simply replacing None here
-                                        let _ = std::mem::replace(&mut input_devices[idx], Some(input_device));
+                                            let input_device = input_device.grab()?.epoll_add(epoll_fd, idx as u64)?;
+
+                                            if idx == input_devices.len() {
+                                                input_devices.push(Some(input_device));
+                                            } else {
+                                                // simply replacing None here
+                                                let _ = std::mem::replace(&mut input_devices[idx], Some(input_device));
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -215,7 +219,6 @@ pub fn main_res() -> Result<()> {
                     }
                 }
             }
-        }
     }
 }
 
