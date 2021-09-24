@@ -124,9 +124,10 @@ impl InputDevice {
 
     pub fn epoll_del(&mut self) -> Result<&mut Self> {
         if let Some(epoll_fd) = self.epoll_fd {
+            // set this to None first, if we end up returning an Err early, we can't do anything else anyway...
+            self.epoll_fd = None;
             let empty_event = epoll::Event::new(epoll::Events::empty(), 0);
             epoll::ctl(epoll_fd, EPOLL_CTL_DEL, self.device_file.as_raw_fd(), empty_event)?;
-            self.epoll_fd = None;
         }
         Ok(self)
     }
@@ -134,8 +135,8 @@ impl InputDevice {
 
 impl Drop for InputDevice {
     fn drop(&mut self) {
-        // todo: only release if grabbed
-        self.release().ok(); // ignore any errors here, what could we do anyhow?
+        // ignore any errors here, what could we do anyhow?
+        self.release().ok();
         self.epoll_del().ok();
     }
 }
