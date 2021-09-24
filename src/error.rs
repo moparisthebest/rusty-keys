@@ -4,13 +4,7 @@ use std::ffi;
 use std::io;
 
 #[cfg(target_os = "linux")]
-use std::sync::mpsc;
-
-#[cfg(target_os = "linux")]
 use nix;
-
-#[cfg(target_os = "linux")]
-use libc;
 
 /// UInput error.
 #[derive(Debug)]
@@ -23,15 +17,16 @@ pub enum Error {
 	Nul(ffi::NulError),
 
 	Io(io::Error),
+	
+	Toml(toml::de::Error),
 
-	#[cfg(target_os = "linux")]
-	Send(mpsc::SendError<libc::input_event>),
-
-	/// The uinput file could not be found.
-	NotFound,
-
+	NotAKeyboard,
+	
 	/// error reading input_event
 	ShortRead,
+
+	/// epoll already added
+	EpollAlreadyAdded,
 }
 
 impl From<ffi::NulError> for Error {
@@ -53,13 +48,6 @@ impl From<io::Error> for Error {
 	}
 }
 
-#[cfg(target_os = "linux")]
-impl From<mpsc::SendError<libc::input_event>> for Error {
-	fn from(value: mpsc::SendError<libc::input_event>) -> Self {
-		Error::Send(value)
-	}
-}
-
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
 		match self {
@@ -69,13 +57,14 @@ impl fmt::Display for Error {
 			&Error::Nul(ref err) => err.fmt(f),
 
 			&Error::Io(ref err) => err.fmt(f),
-
-			#[cfg(target_os = "linux")]
-			&Error::Send(ref err) => err.fmt(f),
-
-			&Error::NotFound => f.write_str("Device not found."),
+			
+			&Error::Toml(ref err) => err.fmt(f),
+			
+			&Error::NotAKeyboard => f.write_str("This device file is not a keyboard"),
 
 			&Error::ShortRead => f.write_str("Error while reading from device file."),
+			
+			&Error::EpollAlreadyAdded => f.write_str("epoll already added, delete first"),
 		}
 	}
 }

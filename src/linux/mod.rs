@@ -19,9 +19,7 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<device::Builder> {
 
 use libc::input_event;
 use std::process::exit;
-use std::{env, thread};
-use std::sync::mpsc;
-use std::sync::mpsc::Sender;
+use std::env;
 
 const INPUT_FOLDER: &str = "/dev/input/";
 
@@ -32,7 +30,6 @@ const UP: i32 = 0;
 use getopts::Options;
 
 use inotify::{
-    EventMask,
     Inotify,
     WatchMask,
 };
@@ -101,8 +98,6 @@ impl Keyboard<u16, input_event> for Device {
     }
 }
 
-
-
 #[derive(Debug)]
 struct Config {
     device_files: Vec<String>,
@@ -132,76 +127,107 @@ pub fn main_res() -> Result<()> {
     let mut key_map = LinuxKeyMaps::from_cfg(&key_map, &config.config_file);
     //println!("keymaps: {:?}", keymaps);
 
+    let mut input_event_buf = InputDevice::new_input_event_buf();
+
     if config.device_files.len() == 1 {
-        // shortcut, don't bother with threads
-        let mut input_device = InputDevice::open(&config.device_files[0])?;
-        input_device.grab()?;
+        // shortcut, don't bother with epoll
+        let mut input_device = InputDevice::open(&config.device_files[0])?.grab()?;
 
         loop {
-            let event = input_device.read_event()?;
+            let event = input_device.read_event(&mut input_event_buf)?;
             send_event(&mut key_map, event, &device)?
         }
     } else {
-        // start up some intra thread communication
-        let (tx, rx) = mpsc::channel();
+        let epoll_fd = epoll::create(true)?;
+        const INOTIFY_DATA: u64 = u64::max_value();
 
-        if config.device_files.len() > 0 {
-            // we only want to operate on device files sent in then quit
-            for device_file in config.device_files.iter() {
-                let device_file = device_file.clone();
-                let tx = tx.clone();
-                thread::spawn(move || {
-                    let ret = spawn_map_thread(tx, &device_file);
-                    if let Err(e) = ret {
-                        println!("mapping for {} ended due to error: {}", device_file, e);
-                    }
-                });
-            }
+        let (device_files, mut inotify) = if config.device_files.len() > 0 {
+            // we operate on exactly the devices sent in and never watch for new devices
+            (config.device_files.iter().map(|device_file| InputDevice::open(&device_file).expect("device_file does not exist!")).collect(), None)
         } else {
-            let tx = tx.clone();
-            thread::spawn(move || {
-                // we want to wait forever starting new threads for any new keyboard devices
-                let mut inotify = Inotify::init().expect("Failed to initialize inotify");
+            use std::os::unix::io::AsRawFd;
+            // we want to wait forever starting new threads for any new keyboard devices
+            // there is a slight race condition here, if a keyboard is plugged in between the time we
+            // enumerate the devices and set up the inotify watch, we'll miss it, doing it the other way
+            // can bring duplicates though, todo: think about this...
+            let device_files = get_keyboard_devices();
+            let mut inotify = Inotify::init()?;
+            inotify.add_watch(INPUT_FOLDER, WatchMask::CREATE)?;
+            let epoll_event = epoll::Event::new(epoll::Events::EPOLLIN | epoll::Events::EPOLLET, INOTIFY_DATA);
+            epoll::ctl(epoll_fd, epoll::ControlOptions::EPOLL_CTL_ADD, inotify.as_raw_fd(), epoll_event)?;
+            (device_files, Some(inotify))
+        };
+        let mut input_devices = Vec::with_capacity(device_files.len());
+        for (idx, device_file) in device_files.into_iter().enumerate() {
+            input_devices.push(Some(device_file.grab()?.epoll_add(epoll_fd, idx as u64)?));
+        }
 
-                inotify.add_watch(INPUT_FOLDER, WatchMask::CREATE).expect("Failed to add inotify watch");
+        let mut epoll_buf = [epoll::Event::new(epoll::Events::empty(), 0); 4];
+        let mut inotify_buf = [0u8; 256];
 
-                let device_files = get_keyboard_device_filenames();
-                println!("Detected devices: {:?}", device_files);
-                for device_file in device_files.iter() {
-                    inotify_spawn_thread(&tx, device_file);
-                }
+        loop {
+            let num_events = epoll::wait(epoll_fd, -1, &mut epoll_buf)?;
+            for event in &epoll_buf[0..num_events] {
+                let idx = event.data as usize;
+                if let Some(Some(input_device)) = &mut input_devices.get_mut(idx) {
+                    loop {
+                        match input_device.read_event(&mut input_event_buf) {
+                            Ok(event) => {
+                                //println!("input event: {:?}", event);
+                                send_event(&mut key_map, event, &device)?
+                            }
+                            Err(err) => {
+                                if let Error::Io(ref err) = err {
+                                    if err.kind() == std::io::ErrorKind::WouldBlock {
+                                        // go back to epoll event loop
+                                        break;
+                                    }
+                                }
+                                // otherwise it's some other error, don't read anything from this again
+                                println!("input err: {:?}", err);
+                                // remove it from input_devices and drop it
+                                let _ = std::mem::replace(&mut input_devices[idx], None);
+                                if inotify.is_none() {
+                                    // if we aren't watching with inotify, and the last device is removed (Vec only has None's in it), exit the program
+                                    if input_devices.iter().all(|id| id.is_none()) {
+                                        println!("last device went away, exiting...");
+                                        return Ok(());
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } else if event.data == INOTIFY_DATA {
+                    if let Some(inotify) = &mut inotify {
+                        for event in inotify.read_events(&mut inotify_buf)? {
+                            if let Some(device_file) = event.name.and_then(|name| name.to_str()) {
+                                // check if this is an eligible keyboard device
+                                let mut path = std::path::PathBuf::new();
+                                path.push(INPUT_FOLDER);
+                                path.push(device_file);
+                                
+                                if let Ok(input_device) = InputDevice::open(path).and_then(|id|id.valid_keyboard_device()) {
+                                    println!("starting mapping for new keyboard: {}", device_file);
 
-                let mut buffer = [0u8; 4096];
-                loop {
-                    let events = inotify.read_events_blocking(&mut buffer);
+                                    let idx = input_devices.iter().position(|id| id.is_none()).unwrap_or(input_devices.len());
 
-                    if let Ok(events) = events {
-                        for event in events {
-                            if !event.mask.contains(EventMask::ISDIR) {
-                                if let Some(device_file) = event.name.and_then(|name|name.to_str()) {
-                                    // check if this is an eligible keyboard device
-                                    let mut path = std::path::PathBuf::new();
-                                    path.push(INPUT_FOLDER);
-                                    path.push(device_file);
+                                    let input_device = input_device.grab()?.epoll_add(epoll_fd, idx as u64)?;
 
-                                    if valid_keyboard_device(path) {
-                                        println!("starting mapping thread for: {}", device_file);
-                                        inotify_spawn_thread(&tx, device_file.clone());
+                                    if idx == input_devices.len() {
+                                        input_devices.push(Some(input_device));
+                                    } else {
+                                        // simply replacing None here
+                                        let _ = std::mem::replace(&mut input_devices[idx], Some(input_device));
                                     }
                                 }
                             }
                         }
                     }
                 }
-            });
-        }
-        drop(tx); // drop our last one, so when the threads finish, everything stops
-        // process all events
-        for event in rx {
-            send_event(&mut key_map, event, &device)?
+            }
         }
     }
-    Ok(())
 }
 
 fn send_event(key_map: &mut LinuxKeyMaps, mut event: input_event, device: &Device) -> Result<()> {
@@ -211,28 +237,6 @@ fn send_event(key_map: &mut LinuxKeyMaps, mut event: input_event, device: &Devic
         device.write_event(&mut event)?
     }
     Ok(())
-}
-
-fn inotify_spawn_thread(tx: &Sender<input_event>, device_file: &str) {
-    let mut filename = INPUT_FOLDER.to_string();
-    filename.push_str(&device_file);
-    let tx = tx.clone();
-    thread::spawn(move || {
-        let ret = spawn_map_thread(tx, &filename);
-        if let Err(e) = ret {
-            println!("mapping for {} ended due to error: {}", filename, e);
-        }
-    });
-}
-
-fn spawn_map_thread(tx: Sender<input_event>, device_file: &str) -> Result<()> {
-    let mut input_device = InputDevice::open(device_file)?;
-    input_device.grab()?;
-
-    loop {
-        let event = input_device.read_event()?;
-        tx.send(event)?
-    }
 }
 
 fn parse_args() -> Config {
@@ -269,64 +273,13 @@ fn parse_args() -> Config {
     Config::new(matches.free, config_file)
 }
 
-nix::ioctl_read_buf!(eviocgname, b'E', 0x06, u8);
-nix::ioctl_read_buf!(eviocgbit, b'E', 0x20, u8);
-nix::ioctl_read_buf!(eviocgbit_ev_key, b'E', 0x20 + EV_KEY, u8);
-
-fn valid_keyboard_device_res<P: AsRef<Path>>(path: P) -> Result<bool> {
-    use std::fs::File;
-    use std::os::unix::fs::FileTypeExt;
-    use std::os::unix::io::AsRawFd;
-
-    let device_file = File::open(path)?;
-
-    // must be a character device
-    if !device_file.metadata()?.file_type().is_char_device() {
-        return Ok(false);
-    }
-
-    // does it support EV_KEY
-    let mut evbit = [0u8; 8];
-    unsafe {
-        eviocgbit(device_file.as_raw_fd(), &mut evbit)?;
-    };
-    let evbit = u64::from_ne_bytes(evbit);
-    if (evbit & (1 << EV_KEY)) == 0 {
-        return Ok(false);
-    }
-
-    // does it support KEY_A ? todo: check other keys ?
-    let mut key_bits = [0u8; (KEY_MAX as usize / 8) + 1];
-    unsafe {
-        eviocgbit_ev_key(device_file.as_raw_fd(), &mut key_bits)?;
-    };
-    if (key_bits[KEY_A as usize / 8] & (1 << (KEY_A % 8))) == 0 {
-        return Ok(false);
-    }
-
-    // is it another running copy of rusty-keys ?
-    let mut name = [0u8; NAME.len()];
-    unsafe {
-        eviocgname(device_file.as_raw_fd(), &mut name)?
-    };
-    if NAME.as_bytes() == &name {
-        return Ok(false);
-    }
-    return Ok(true);
-}
-
-fn valid_keyboard_device<P: AsRef<Path>>(path: P) -> bool {
-    valid_keyboard_device_res(path).unwrap_or(false)
-}
-
-fn get_keyboard_device_filenames() -> Vec<String> {
+fn get_keyboard_devices() -> Vec<InputDevice> {
     let mut res = Vec::new();
     if let Ok(entries) = std::fs::read_dir(INPUT_FOLDER) {
         for entry in entries {
             if let Ok(entry) = entry {
-                if valid_keyboard_device(entry.path()) {
-                    // these unwrap()'s should not be able to fail if valid_keyboard_device() returns true
-                    res.push(entry.path().file_name().unwrap().to_str().unwrap().to_owned());
+                if let Ok(input_device) = InputDevice::open(entry.path()).and_then(|id|id.valid_keyboard_device()) {
+                    res.push(input_device);
                 }
             }
         }

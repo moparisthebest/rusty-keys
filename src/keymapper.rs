@@ -470,9 +470,5 @@ fn parse_cfg<P: AsRef<Path>>(path: P) -> Result<KeymapConfig> {
     let mut f = File::open(path)?;
     let mut input = String::new();
     f.read_to_string(&mut input)?;
-    //toml::from_str(&input)?
-    match toml::from_str(&input) {
-        Ok(toml) => Ok(toml),
-        Err(_) => Err(Error::NotFound) // todo: something better
-    }
+    toml::from_str(&input).map_err(|e| Error::Toml(e))
 }

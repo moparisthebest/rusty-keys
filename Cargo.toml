@@ -32,4 +32,5 @@ lazy_static = "1.4.0"
 [target.'cfg(target_os="linux")'.dependencies]
 libc = "0.2.72"
 nix = "0.17.0"
+epoll = "4.3.1"
 inotify = { version = "0.8.3", default-features = false, features = [] }
