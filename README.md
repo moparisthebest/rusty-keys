@@ -3,9 +3,9 @@ rusty-keys
 
 [![Build Status](https://ci.moparisthe.best/job/moparisthebest/job/rusty-keys/job/master/badge/icon%3Fstyle=plastic)](https://ci.moparisthe.best/job/moparisthebest/job/rusty-keys/job/master/)
 
-uinput level keyboard mapper for linux, with advanced caps lock and shift swapping behavior
+low level keyboard mapper for linux and windows, with advanced caps lock and shift swapping behavior
 
-This is the only keymapper I am aware of capable of implementing this layout:  
+This is the only keymapper I am aware of capable of implementing this layout, which I call Unix Programmer's Dvorak, which has been my daily driver since 2014:  
 ![Unix Programmer's Dvorak](https://www.moparisthebest.com/kbs/programmer-dvorak-NoSecondary-NumpadStandard-NoSwap-StandardNums-SwapAt-SwapPipe.svg)
 
 The Problem
@@ -20,7 +20,7 @@ The Solution
 2. Create a new keyboard input device with uinput, this looks identical to any other keyboard device to anything running on the box.
 3. Read input_events from the real device, map them, send them to our created device.
 
-This solution is what rusty-keys implements, it works in ttys, in X, in virtualbox even running windows or whatever,
+This solution is what rusty-keys implements, it works in ttys, in X, in Wayland, in virtualbox even running windows or whatever,
 on SDL games, it will work literally everywhere, because rusty-keys just creates a regular keyboard.
 
 How to run
@@ -52,6 +52,7 @@ How to install
 --------------
  * `cargo install rusty-keys`  
  * Arch Linux [rusty-keys](https://aur.archlinux.org/packages/rusty-keys/) [rusty-keys-git](https://aur.archlinux.org/packages/rusty-keys-git/)
+ * Download a static binary for your system from the [releases](https://code.moparisthebest.com/moparisthebest/rusty-keys/releases) section. [github mirror](https://github.com/moparisthebest/rusty-keys/releases)
 
 License
 -------
