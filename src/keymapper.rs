@@ -248,9 +248,22 @@ pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
             }
         if self.revert_default_keys.contains(&event.code()) {
             match value {
-                    // todo: ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released... fix that...
-                KeyState::DOWN => self.current_keymap_index = self.revert_keymap_index,
-                KeyState::UP => self.current_keymap_index = self.chosen_keymap_index,
+                KeyState::DOWN => {
+                    // todo: should we release currently held keys and then press them back down here, kinda the opposite of below? not for now...
+                    self.current_keymap_index = self.revert_keymap_index
+                },
+                KeyState::UP => {
+                    self.current_keymap_index = self.chosen_keymap_index;
+                    // need to release all currently held down keys, except this one, otherwise ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released
+                    let orig_code = event.code();
+                    for (idx, key_down) in self.key_state.iter_mut().enumerate() {
+                        if *key_down {
+                            device.send_mod_code_value(T::try_from(idx).unwrap_or_else(|_| panic!("cannot convert from usize to T ????")), true, event)?;
+                            *key_down = false;
+                        }
+                    }
+                    return device.send_mod_code_value(orig_code, true, event)
+                },
                     _ => () // do nothing for 2
                 }
             }
