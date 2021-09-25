@@ -11,6 +11,7 @@ use std::process::exit;
 use std::env;
 use std::collections::HashMap;
 
+#[cfg(feature = "epoll_inotify")]
 const INPUT_FOLDER: &str = "/dev/input/";
 
 // 1 is down, 0 is up
@@ -268,6 +269,7 @@ fn parse_args() -> Config {
     Config::new(matches.free, config_file)
 }
 
+#[cfg(feature = "epoll_inotify")]
 fn get_keyboard_devices() -> Vec<InputDevice> {
     let mut res = Vec::new();
     if let Ok(entries) = std::fs::read_dir(INPUT_FOLDER) {

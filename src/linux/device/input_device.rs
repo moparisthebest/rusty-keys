@@ -2,13 +2,11 @@ use std::mem;
 use std::fs::File;
 use std::io::Read;
 use std::os::unix::io::AsRawFd;
-use std::os::unix::prelude::RawFd;
 use libc::{input_event, c_int};
 use nix::{ioctl_write_ptr, ioctl_read_buf};
-use nix::fcntl::{OFlag, fcntl, FcntlArg};
 
 #[cfg(feature = "epoll_inotify")]
-use epoll::ControlOptions::{EPOLL_CTL_ADD, EPOLL_CTL_DEL};
+use std::os::unix::prelude::RawFd;
 
 use crate::{Error,Result};
 use crate::linux::{EV_KEY, KEY_MAX, NAME, KEY_W, KEY_A, KEY_S, KEY_D};
@@ -23,6 +21,7 @@ const SIZE_OF_INPUT_EVENT: usize = mem::size_of::<input_event>();
 pub struct InputDevice {
     device_file: File,
     grabbed: bool,
+    #[cfg(feature = "epoll_inotify")]
     epoll_fd: Option<RawFd>,
 }
 
@@ -31,6 +30,7 @@ impl InputDevice {
         Ok(InputDevice {
             device_file: File::open(path)?,
             grabbed: false,
+            #[cfg(feature = "epoll_inotify")]
             epoll_fd: None,
         })
     }
@@ -109,6 +109,8 @@ impl InputDevice {
     
     #[cfg(feature = "epoll_inotify")]
     pub fn epoll_add(mut self, epoll_fd: RawFd, data: u64) -> Result<Self> {
+        use nix::fcntl::{OFlag, fcntl, FcntlArg};
+
         if None != self.epoll_fd {
             return Err(Error::EpollAlreadyAdded);
         }
@@ -120,7 +122,7 @@ impl InputDevice {
         fcntl(raw_fd, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
 
         let epoll_event = epoll::Event::new(epoll::Events::EPOLLIN | epoll::Events::EPOLLET, data);
-        epoll::ctl(epoll_fd, EPOLL_CTL_ADD, raw_fd, epoll_event)?;
+        epoll::ctl(epoll_fd, epoll::ControlOptions::EPOLL_CTL_ADD, raw_fd, epoll_event)?;
         self.epoll_fd = Some(epoll_fd);
         Ok(self)
     }
@@ -131,7 +133,7 @@ impl InputDevice {
             // set this to None first, if we end up returning an Err early, we can't do anything else anyway...
             self.epoll_fd = None;
             let empty_event = epoll::Event::new(epoll::Events::empty(), 0);
-            epoll::ctl(epoll_fd, EPOLL_CTL_DEL, self.device_file.as_raw_fd(), empty_event)?;
+            epoll::ctl(epoll_fd, epoll::ControlOptions::EPOLL_CTL_DEL, self.device_file.as_raw_fd(), empty_event)?;
         }
         Ok(self)
     }

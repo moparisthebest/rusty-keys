@@ -1,11 +1,12 @@
 
-use std::fs::File;
-use std::io::Read;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::convert::TryFrom;
 
-use crate::{Error, Result};
+#[cfg(feature = "toml_serde")]
+use std::path::Path;
+
+use crate::Result;
 
 const INVERT_KEY_FLAG: char = '^';
 const CAPS_MODIFY_KEY_FLAG: char = '*';
@@ -454,8 +455,6 @@ impl<K, T, E, R> KeyMapper<K, T, E, R> for Key<T>
     }
 }
 
-use std::path::Path;
-
 #[cfg(feature = "toml_serde")]
 #[derive(serde::Deserialize, Debug)]
 pub struct KeymapConfig {
@@ -469,10 +468,11 @@ pub struct KeymapConfig {
 
 #[cfg(feature = "toml_serde")]
 fn parse_cfg<P: AsRef<Path>>(path: P) -> Result<KeymapConfig> {
-    let mut f = File::open(path)?;
+    use std::io::Read;
+    let mut f = std::fs::File::open(path)?;
     let mut input = String::new();
     f.read_to_string(&mut input)?;
-    toml::from_str(&input).map_err(|e| Error::Toml(e))
+    toml::from_str(&input).map_err(|e| crate::Error::Toml(e))
 }
 
 #[cfg(not(feature = "toml_serde"))]
