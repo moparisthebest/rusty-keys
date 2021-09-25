@@ -215,7 +215,12 @@ pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
                 self.key_state[device.caps_lock_code().into()] = !self.key_state[device.caps_lock_code().into()];
                 }
             } else {
-            self.key_state[event.code().into()] = value == KeyState::DOWN;
+                let idx = event.code().into();
+                if idx >= KEY_MAX {
+                    // oh well, send it directly then
+                    return device.send(event);
+                }
+                self.key_state[idx] = value == KeyState::DOWN;
             }
             let mut switch_layout_keys_pressed = true;
             for layout_switch_key in self.switch_layout_keys.iter_mut() {
@@ -250,42 +255,16 @@ pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
 const KEY_MAX: usize = 249;
 
 struct KeyMap<T: Into<usize> + Copy> {
-    //keymap: Vec<Key>,
     keymap: [Key<T>; KEY_MAX],
 }
 
 impl<T: Into<usize> + Copy> KeyMap<T> {
     pub fn new() -> Self {
-        //let mut keymap = [0u16; KEY_MAX];
-        //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(NOOP); KEY_MAX];
-        //let mut keymap : [Box<KeyMapper>; KEY_MAX] = [Box::new(0u16); KEY_MAX];
-        let keymap: [Key<T>; KEY_MAX] = [Key::Noop; KEY_MAX];
-        /*
-        let mut keymap: Vec<Key> = Vec::with_capacity(KEY_MAX);
-        #[allow(unused_variables)]
-        for x in 0..KEY_MAX {
-            keymap.push(Key::Noop);
-        }
-        */
-        // which is rustier
-        /*
-        for x  in 0..KEY_MAX {
-            keymap[x as usize] = x as u16;
-        }
-        for (x, v) in keymap.iter_mut().enumerate() {
-            *v = x as u16;
-        }
-        */
-        //println!("keymap: {:?}", &keymap[..]);
         KeyMap {
-            keymap: keymap
+            keymap: [Key::Noop; KEY_MAX]
         }
     }
-    /*
-        pub fn map(&mut self, from : u16, to: u16) {
-            self.keymap[from as usize] = to;
-        }
-    */
+
     pub fn map(&mut self, from: T, to: Key<T>) {
         self.keymap[from.into()] = to;
     }
@@ -303,25 +282,18 @@ impl<K, T, E, R> KeyMapper<K, T, E, R> for KeyMap<T>
 }
 
 struct CodeKeyMap<T: Into<usize> + TryFrom<usize> + Copy + Default> {
-    //keymap: Vec<Key>,
     keymap: [T; KEY_MAX],
 }
 
 impl<T: Into<usize> + TryFrom<usize> + Copy + Default> CodeKeyMap<T> {
     pub fn new() -> Self {
         let mut keymap = [T::default(); KEY_MAX];
-        // which is rustier
-        /*
-        for x  in 0..KEY_MAX {
-            keymap[x as usize] = x as u16;
-        }
-        */
         for (x, v) in keymap.iter_mut().enumerate() {
             *v = T::try_from(x).unwrap_or_else(|_| panic!("cannot convert from usize to T ????"));
         }
         //println!("keymap: {:?}", &keymap[..]);
         CodeKeyMap {
-            keymap: keymap
+            keymap
         }
     }
 
