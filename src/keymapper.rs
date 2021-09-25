@@ -169,7 +169,9 @@ impl<K, T, E, R> KeyMaps<K, T, E, R>
                 let mut keymap = CodeKeyMap::new();
                 let mut i: usize = 0;
                 for key_code in v {
-                    keymap.map(base_keymap[i], key_code);
+                    if base_keymap[i] != key_code {
+                        keymap.map(base_keymap[i], key_code);
+                    }
                     i = i + 1;
                     if i > base_keymap.len() {
                         panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, i);
