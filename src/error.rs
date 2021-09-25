@@ -18,6 +18,7 @@ pub enum Error {
 
 	Io(io::Error),
 	
+	#[cfg(feature = "toml_serde")]
 	Toml(toml::de::Error),
 
 	NotAKeyboard,
@@ -57,7 +58,8 @@ impl fmt::Display for Error {
 			&Error::Nul(ref err) => err.fmt(f),
 
 			&Error::Io(ref err) => err.fmt(f),
-			
+
+			#[cfg(feature = "toml_serde")]
 			&Error::Toml(ref err) => err.fmt(f),
 			
 			&Error::NotAKeyboard => f.write_str("This device file is not a keyboard"),

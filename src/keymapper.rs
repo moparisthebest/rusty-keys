@@ -120,6 +120,7 @@ impl<K, T, E, R> KeyMaps<K, T, E, R>
         E: KeyEvent<T>,
         K: Keyboard<T, E, R>,
 {
+    #[cfg(feature = "toml_serde")]
     pub fn from_cfg<P: AsRef<Path>>(key_map: &HashMap<&'static str, T>, path: P) -> KeyMaps<K, T, E, R> {
         let key_map_config = parse_cfg(path).expect("provided config cannot be found/parsed");
         KeyMaps::new(key_map, key_map_config)
@@ -454,9 +455,9 @@ impl<K, T, E, R> KeyMapper<K, T, E, R> for Key<T>
 }
 
 use std::path::Path;
-use serde::Deserialize;
 
-#[derive(Deserialize, Debug)]
+#[cfg(feature = "toml_serde")]
+#[derive(serde::Deserialize, Debug)]
 pub struct KeymapConfig {
     switch_layout_keys: Vec<String>,
     revert_default_key: Option<String>,
@@ -466,9 +467,75 @@ pub struct KeymapConfig {
     keymaps: Vec<String>
 }
 
+#[cfg(feature = "toml_serde")]
 fn parse_cfg<P: AsRef<Path>>(path: P) -> Result<KeymapConfig> {
     let mut f = File::open(path)?;
     let mut input = String::new();
     f.read_to_string(&mut input)?;
     toml::from_str(&input).map_err(|e| Error::Toml(e))
 }
+
+#[cfg(not(feature = "toml_serde"))]
+#[derive(Debug)]
+pub struct KeymapConfig {
+    switch_layout_keys: Vec<&'static str>,
+    revert_default_key: Option<&'static str>,
+    revert_default_keys: Option<Vec<&'static str>>,
+    revert_keymap_index: usize,
+    default_keymap_index: usize,
+    keymaps: Vec<&'static str>
+}
+
+#[cfg(not(feature = "toml_serde"))]
+impl Default for KeymapConfig {
+    fn default() -> Self {
+        KeymapConfig {
+            switch_layout_keys: vec!["LEFTSHIFT", "RIGHTSHIFT"],
+
+            // pressing any of these keys reverts to the index specified in revert_keymap_index for only the duration of the pressing
+            // used so QWERTY shortcuts like Ctrl+C still work
+            revert_default_keys: Some(vec!["LCTL", "LGUI", "LALT"]),
+            revert_keymap_index: 0,
+
+            // this is the default index to use when the program first starts
+            // in this case, 2 means Unix Programmer Dvorak
+            default_keymap_index: 2,
+
+            // these are the keymaps available, you can add as many as you want or re-order them, just be aware the mapping is
+            // always done from the first one to all subsequent ones, so you probably want to leave QWERTY or similar up top
+            keymaps: vec![
+                // default key layout, QWERTY in this case
+                r###"
+                ESC, F1,  F2,  F3,  F4,  F5,  F6,  F7,  F8,  F9,  F10, F11, F12,           PSCR,SLCK,BRK,
+                GRV, 1,   2,   3,   4,   5,   6,   7,   8,   9,   0,   MINS,EQL, BSPC,     INS, HOME,PGUP,    NLCK,PSLS,PAST,PMNS,
+                TAB, Q,   W,   E,   R,   T,   Y,   U,   I,   O,   P,   LBRC,RBRC,BSLS,     DEL, END, PGDN,    P7,  P8,  P9,
+                CAPS,A,   S,   D,   F,   G,   H,   J,   K,   L,   SCLN,QUOT,     ENT,                         P4,  P5,  P6,  PPLS,
+                LSFT,Z,   X,   C,   V,   B,   N,   M,   COMM,DOT, SLSH,          RSFT,          UP,           P1,  P2,  P3,
+                LCTL,LGUI,LALT,          SPC,                     RALT,RGUI,APP, RCTL,     LEFT,DOWN,RGHT,    P0,       PDOT,PENT
+                "###,
+                // Dvorak http://en.wikipedia.org/wiki/Dvorak_Simplified_Keyboard
+                // https://www.moparisthebest.com/kbs/standard-dvorak-QwertySecondary.svg
+                r###"
+                ESC, F1,  F2,  F3,  F4,  F5,  F6,  F7,  F8,  F9,  F10, F11, F12,           PSCR,SLCK,BRK,
+                GRV, 1,   2,   3,   4,   5,   6,   7,   8,   9,   0,   LBRC,RBRC,BSPC,     INS, HOME,PGUP,    NLCK,PSLS,PAST,PMNS,
+                TAB, QUOT,COMM,DOT, P,   Y,   F,   G,   C,   R,   L,   SLSH,EQL, BSLS,     DEL, END, PGDN,    P7,  P8,  P9,
+                CAPS,A,   O,   E,   U,   I,   D,   H,   T,   N,   S,   MINS,     ENT,                         P4,  P5,  P6,  PPLS,
+                LSFT,SCLN,Q,   J,   K,   X,   B,   M,   W,   V,   Z,             RSFT,          UP,           P1,  P2,  P3,
+                LCTL,LGUI,LALT,          SPC,                     RALT,RGUI,APP, RCTL,     LEFT,DOWN,RGHT,    P0,       PDOT,PENT
+                "###,
+                // Unix Programmer Dvorak - for unix developers who are switching from dvorak
+                // https://www.moparisthebest.com/kbs/programmer-dvorak-NoSecondary-NumpadStandard-NoSwap-StandardNums-SwapAt-SwapPipe.svg
+                r###"
+                ESC,      F1,    F2,     F3,      F4,      F5,   F6,    F7,   F8,   F9,     F10,    F11,   F12,                 PSCR,SLCK,BRK,
+                *^4:*^GRV,  *^7:*1,  *LBRC:*2, *^LBRC:*3, *^RBRC:*4, *^9:*5, *^2:*6,  *^8:*7, *^0:*8, *^EQL:*9, *RBRC:*0, *^1:*^5, *^3:*GRV, BSPC,        INS, HOME,PGUP,    NLCK,   *PSLS:*^9, *PAST:*^0,   *PMNS:*^4,
+                TAB,      *QUOT,  *COMM,   *DOT,     P,       Y,    F,     G,    C,    R,      L,      *SLSH,  *EQL:*^6, *^BSLS,  DEL, END, PGDN,    *P7:^A,  *P8:^B,   *P9:^C,
+                CAPS,     A,     O,      E,       U,       I,    D,     H,    T,    N,      S,      *MINS,          ENT,                            *P4:^D,  *P5:^E,   *P6:^F,     *PPLS:*COMM,
+                LSFT,     *SCLN,  Q,      J,       K,       X,    B,     M,    W,    V,      Z,                     RSFT,             UP,           *P1:*EQL, *P2:X,    *P3:*^SCLN,
+                LCTL,     LGUI,  LALT,                     SPC,                             RALT,   RGUI,  APP,    RCTL,        LEFT,DOWN,RGHT,    *P0:*BSLS,         *PDOT:*SCLN, PENT
+                "###,
+            ],
+            revert_default_key: None, // use revert_default_keys instead
+        }
+    }
+}
+

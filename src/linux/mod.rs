@@ -108,6 +108,9 @@ pub fn main_res() -> Result<()> {
         .event(key_map.values())?
         .create()?;
 
+    #[cfg(not(feature = "toml_serde"))]
+    let mut key_map = LinuxKeyMaps::new(&key_map, KeymapConfig::default());
+    #[cfg(feature = "toml_serde")]
     let mut key_map = LinuxKeyMaps::from_cfg(&key_map, &config.config_file);
     //println!("keymaps: {:?}", keymaps);
 
