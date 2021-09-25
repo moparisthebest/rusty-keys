@@ -32,5 +32,14 @@ strip "target/$TARGET/release/rusty-keys$SUFFIX" || true # if strip fails, it's 
 mkdir -p release
 mv "target/$TARGET/release/rusty-keys$SUFFIX" "release/rusty-keys-$TARGET$SUFFIX"
 
+if [ "$TARGET" == 'x86_64-unknown-linux-musl' ]
+then
+  # for this arch only, we are going to build with each feature combo to test that the build succeeds, but not archive them
+  # the default for now is all features, so that's already tested above
+  cross build --target $TARGET --release --no-default-features
+  cross build --target $TARGET --release --no-default-features --features epoll_inotify
+  cross build --target $TARGET --release --no-default-features --features toml_serde
+fi
+
 echo 'build success!'
 exit 0
