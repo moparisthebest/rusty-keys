@@ -149,8 +149,14 @@ impl<K, T, E, R> KeyMaps<K, T, E, R>
                 let mut keymap = KeyMap::new();
                 let mut i: usize = 0;
                 for key_code in v {
-                    // todo: if these are the same, do Noop instead
-                    keymap.map(base_keymap[i], key_code);
+                    // if it's a direct key and it's the same, don't do any mapping
+                    if let Key::Direct(key) = key_code {
+                        if base_keymap[i] != key {
+                            keymap.map(base_keymap[i], key_code);
+                        }
+                    } else {
+                        keymap.map(base_keymap[i], key_code);
+                    }
                     i = i + 1;
                     if i > base_keymap.len() {
                         panic!("all keymaps must be the same length, keymap index 0 length: {}, index {} length: {},", base_keymap.len(), x, i);
