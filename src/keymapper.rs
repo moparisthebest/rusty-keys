@@ -32,7 +32,7 @@ pub trait KeyEvent<T>
 
 pub trait Keyboard<T, E, R = ()>
     where
-        T: Into<usize>,
+        T: Into<usize> + Copy,
         E: KeyEvent<T>,
 {
     fn send(&self, event: &mut E) -> Result<R>;
@@ -43,11 +43,52 @@ pub trait Keyboard<T, E, R = ()>
     fn right_shift_code(&self) -> T;
     fn caps_lock_code(&self) -> T;
     fn block_key(&self) -> Result<R>;
+
+    fn send_half_inverted_key(&self, half_inverted_key: &HalfInvertedKey<T>, event: &mut E, left_shift: bool, right_shift: bool, caps_lock: bool) -> Result<R> {
+        let value = event.value();
+        let mut invert_shift = half_inverted_key.invert_shift;
+        if value == KeyState::DOWN {
+            if caps_lock && half_inverted_key.capslock_nomodify {
+                invert_shift = !invert_shift;
+            }
+            if invert_shift {
+                let (shift_code, up_not_down) = if left_shift {
+                    (self.left_shift_code(), true)
+                } else if right_shift {
+                    (self.right_shift_code(), true)
+                } else {
+                    (self.left_shift_code(), false)
+                };
+                self.send_mod_code_value(shift_code, up_not_down, event)?;
+                // SYN_REPORT after, then key, then key's SYN_REPORT
+                self.synchronize()?;
+            }
+        }
+        let ret = self.send_mod_code(half_inverted_key.code, event)?;
+        if value == KeyState::UP {
+            if caps_lock && half_inverted_key.capslock_nomodify {
+                invert_shift = !invert_shift;
+            }
+            if invert_shift {
+                let (shift_code, up_not_down) = if left_shift {
+                    (self.left_shift_code(), false)
+                } else if right_shift {
+                    (self.right_shift_code(), false)
+                } else {
+                    (self.left_shift_code(), true)
+                };
+                // SYN_REPORT first after key, then shift, then key's SYN_REPORT which will be used for shift's
+                self.synchronize()?;
+                self.send_mod_code_value(shift_code, up_not_down, event)?;
+            }
+        }
+        Ok(ret)
+    }
 }
 
 pub trait KeyMapper<K, T, E, R>
     where
-        T: Into<usize>,
+        T: Into<usize> + Copy,
         E: KeyEvent<T>,
         K: Keyboard<T, E, R>,
 {
@@ -254,6 +295,7 @@ pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
                 },
                 KeyState::UP => {
                     self.current_keymap_index = self.chosen_keymap_index;
+                    #[cfg(not(target_os = "macos"))] {
                     // need to release all currently held down keys, except this one, otherwise ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released
                     let orig_code = event.code();
                     for (idx, key_down) in self.key_state.iter_mut().enumerate() {
@@ -262,7 +304,9 @@ pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
                             *key_down = false;
                         }
                     }
+                    // todo: seems like we should not send this here, and instead just set the original code back, and pass it through the keymaps?
                     return device.send_mod_code_value(orig_code, true, event)
+                    }
                 },
                     _ => () // do nothing for 2
                 }
@@ -337,59 +381,13 @@ impl<K, T, E, R> KeyMapper<K, T, E, R> for CodeKeyMap<T>
 
 // todo:capslock_nomodify is like a whole-key thing, not a half-key thing, split code/invert_shift to own struct, send into send_key from *InvertedKey, maybe anyway, consider it, maybe 1 char for whole key and another for half?
 #[derive(Clone, Copy)]
-struct HalfInvertedKey<T: Clone + Copy> {
-    code: T,
+pub struct HalfInvertedKey<T: Clone + Copy> {
+    pub code: T,
     // code this is describing
-    invert_shift: bool,
+    pub invert_shift: bool,
     // true to invert shift for this code
-    capslock_nomodify: bool,
+    pub capslock_nomodify: bool,
     // true means capslock does not normally modify this, but you would like it to
-}
-
-fn send_half_inverted_key<K, T, E, R>(half_inverted_key: &HalfInvertedKey<T>, event: &mut E, device: &K, left_shift: bool, right_shift: bool, caps_lock: bool) -> Result<R>
-    where
-        T: Into<usize> + Clone + Copy,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
-{
-    let value = event.value();
-    let mut invert_shift = half_inverted_key.invert_shift;
-    if value == KeyState::DOWN {
-        if caps_lock && half_inverted_key.capslock_nomodify {
-            invert_shift = !invert_shift;
-        }
-        if invert_shift {
-            let (shift_code, up_not_down) = if left_shift {
-                (device.left_shift_code(), true)
-            } else if right_shift {
-                (device.right_shift_code(), true)
-            } else {
-                (device.left_shift_code(), false)
-            };
-            device.send_mod_code_value(shift_code, up_not_down, event)?;
-            // SYN_REPORT after, then key, then key's SYN_REPORT
-            device.synchronize()?;
-        }
-    }
-    let ret = device.send_mod_code(half_inverted_key.code, event)?;
-    if value == KeyState::UP {
-        if caps_lock && half_inverted_key.capslock_nomodify {
-            invert_shift = !invert_shift;
-        }
-        if invert_shift {
-            let (shift_code, up_not_down) = if left_shift {
-                (device.left_shift_code(), false)
-            } else if right_shift {
-                (device.right_shift_code(), false)
-            } else {
-                (device.left_shift_code(), true)
-            };
-            // SYN_REPORT first after key, then shift, then key's SYN_REPORT which will be used for shift's
-            device.synchronize()?;
-            device.send_mod_code_value(shift_code, up_not_down, event)?;
-        }
-    }
-    Ok(ret)
 }
 
 impl<K, T, E, R> KeyMapper<K, T, E, R> for HalfInvertedKey<T>
@@ -402,7 +400,7 @@ impl<K, T, E, R> KeyMapper<K, T, E, R> for HalfInvertedKey<T>
         let left_shift = key_state[device.left_shift_code().into()];
         let right_shift = key_state[device.right_shift_code().into()];
         let caps_lock = key_state[device.caps_lock_code().into()];
-        send_half_inverted_key(self, event, device, left_shift, right_shift, caps_lock)
+        device.send_half_inverted_key(self, event, left_shift, right_shift, caps_lock)
     }
 }
 
@@ -439,9 +437,9 @@ impl<K, T, E, R> KeyMapper<K, T, E, R> for Key<T>
                 let right_shift = key_state[device.right_shift_code().into()];
                 let caps_lock = key_state[device.caps_lock_code().into()];
                 if caps_lock != (left_shift || right_shift) {
-                    send_half_inverted_key(shift_half, event, device, left_shift, right_shift, caps_lock)
+                    device.send_half_inverted_key(shift_half, event, left_shift, right_shift, caps_lock)
                 } else {
-                    send_half_inverted_key(noshift_half, event, device, left_shift, right_shift, caps_lock)
+                    device.send_half_inverted_key(noshift_half, event, left_shift, right_shift, caps_lock)
                 }
             },
         }
