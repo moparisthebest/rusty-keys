@@ -83,7 +83,8 @@ impl InputDevice {
         unsafe {
             eviocgname(raw_fd, &mut name)?
         };
-        if NAME.as_bytes() == &name {
+        // exclude anything starting with "Yubico" also
+        if NAME.as_bytes() == &name || "Yubico".as_bytes() == &name[0..6] {
             return Err(Error::NotAKeyboard);
         }
         return Ok(self);
