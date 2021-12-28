@@ -9,7 +9,7 @@ use nix::{ioctl_write_ptr, ioctl_read_buf};
 use std::os::unix::prelude::RawFd;
 
 use crate::{Error,Result};
-use crate::linux::{EV_KEY, KEY_MAX, NAME, KEY_W, KEY_A, KEY_S, KEY_D};
+use crate::linux::{EV_KEY, KEY_MAX, NAME, KEY_W, KEY_A, KEY_S, KEY_D, BTN_LEFT};
 
 ioctl_write_ptr!(eviocgrab, b'E', 0x90, c_int);
 ioctl_read_buf!(eviocgname, b'E', 0x06, u8);
@@ -68,13 +68,13 @@ impl InputDevice {
             return Err(Error::NotAKeyboard);
         }
 
-        // does it support all keys WASD ? (yes this is fairly random but probably good enough, could make configuration probably)
+        // does it support all keys WASD and *not* LEFT mouse button ? (yes this is fairly random but probably good enough, could make configuration probably)
         let mut key_bits = [0u8; (KEY_MAX as usize / 8) + 1];
         unsafe {
             eviocgbit_ev_key(raw_fd, &mut key_bits)?;
         };
         let key_unsupported = |key : c_int| (key_bits[key as usize / 8] & (1 << (key % 8))) == 0;
-        if key_unsupported(KEY_W) || key_unsupported(KEY_A) || key_unsupported(KEY_S) || key_unsupported(KEY_D) {
+        if key_unsupported(KEY_W) || key_unsupported(KEY_A) || key_unsupported(KEY_S) || key_unsupported(KEY_D) || !key_unsupported(BTN_LEFT) {
             return Err(Error::NotAKeyboard);
         }
 
