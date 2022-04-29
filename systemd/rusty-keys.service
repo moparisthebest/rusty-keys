@@ -4,6 +4,8 @@ After=systemd-udevd.service
 
 [Service]
 ExecStart=/usr/bin/rusty-keys
+Restart=always
+RestartSec=1s
 
 [Install]
 WantedBy=default.target
