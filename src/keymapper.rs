@@ -15,7 +15,7 @@ const HALF_KEY_SEPARATOR: char = ':';
 // nightly only...
 //pub trait KeyCode = Into<usize> + TryFrom<usize> + Copy + Clone + Eq + Hash + Default + 'static;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum KeyState {
     DOWN,
     UP,
@@ -255,7 +255,6 @@ impl<K, T, E, R> KeyMaps<K, T, E, R>
 //impl KeyMapper for KeyMaps {
 //impl KeyMaps {
 pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
-        //println!("type: {} code: {} value: {}", event.type_, event.code, event.value);
     let value = event.value();
     if value != KeyState::OTHER {
             // todo: index check here...

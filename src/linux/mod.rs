@@ -228,6 +228,7 @@ pub fn main_res() -> Result<()> {
 
 fn send_event(key_map: &mut LinuxKeyMaps, mut event: input_event, device: &Device) -> Result<()> {
     if event.type_ == EV_KEY_U16 {
+        // println!("type: {} code: {:?} value: {:?}", event.type_, event.code(), event.value());
         key_map.send_event(&mut event, &device)?
     } else {
         device.write_event(&mut event)?
@@ -592,6 +593,7 @@ pub fn key_map() -> HashMap<&'static str, u16> {
             ("P0", KEY_KP0),
             ("PDOT", KEY_KPDOT),
             ("PENT", KEY_KPENTER),
+            ("TOUCHPAD_TOGGLE", KEY_TOUCHPAD_TOGGLE),
         ].iter().cloned().map(|(m, v)| (m, v as u16)).collect()
     }
 
