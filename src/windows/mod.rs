@@ -1,24 +1,32 @@
 #![windows_subsystem = "windows"]
 
 use crate::*;
-use std::env;
-use std::process::exit;
+use std::{env, process::exit};
 
 use getopts::Options;
 use std::fs::File;
 
-use winapi::um::winuser::{KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, MSG, GetMessageW, CallNextHookEx, SetWindowsHookExW, INPUT_KEYBOARD, MapVirtualKeyW, LPINPUT, INPUT, KEYBDINPUT, SendInput, KEYEVENTF_SCANCODE, KEYEVENTF_KEYUP, WM_KEYUP, WM_KEYDOWN, MAPVK_VK_TO_VSC, ShowWindow, SW_HIDE};
-use winapi::shared::windef::{HHOOK__, HWND};
-use winapi::shared::minwindef::{LRESULT, WPARAM, LPARAM, HINSTANCE};
-use winapi::shared::basetsd::ULONG_PTR;
-use winapi::ctypes::c_int;
+use winapi::{
+    ctypes::c_int,
+    shared::{
+        basetsd::ULONG_PTR,
+        minwindef::{HINSTANCE, LPARAM, LRESULT, WPARAM},
+        windef::{HHOOK__, HWND},
+    },
+    um::winuser::{
+        CallNextHookEx, GetMessageW, MapVirtualKeyW, SendInput, SetWindowsHookExW, ShowWindow,
+        INPUT, INPUT_KEYBOARD, KBDLLHOOKSTRUCT, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE,
+        LPINPUT, MAPVK_VK_TO_VSC, MSG, SW_HIDE, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
+    },
+};
 
 pub mod codes;
 use codes::*;
-use std::sync::atomic::{AtomicPtr, Ordering};
-use std::mem::{zeroed, size_of};
-use winapi::_core::ptr::null_mut;
-use winapi::_core::mem::transmute_copy;
+use std::{
+    mem::{size_of, zeroed},
+    sync::atomic::{AtomicPtr, Ordering},
+};
+use winapi::_core::{mem::transmute_copy, ptr::null_mut};
 
 use lazy_static::lazy_static;
 use std::sync::Mutex;
@@ -65,7 +73,12 @@ impl Keyboard<USizeableDWORD, InputEvent, LRESULT> for Device {
         self.send_mod_code_value(code, event.value as u32 == WM_KEYUP, event)
     }
 
-    fn send_mod_code_value(&self, code: USizeableDWORD, up_not_down: bool, _event: &mut InputEvent) -> Result<LRESULT> {
+    fn send_mod_code_value(
+        &self,
+        code: USizeableDWORD,
+        up_not_down: bool,
+        _event: &mut InputEvent,
+    ) -> Result<LRESULT> {
         let flags = if up_not_down {
             KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP
         } else {
@@ -132,7 +145,7 @@ unsafe extern "system" fn keybd_proc(code: c_int, w_param: WPARAM, l_param: LPAR
              kb_struct.vkCode, kb_struct.scanCode, kb_struct.flags, kb_struct.time, kb_struct.dwExtraInfo);
     */
 
-    let mut input_event = InputEvent{
+    let mut input_event = InputEvent {
         code,
         value: w_param,
         kb_hook_pointer: l_param,
@@ -142,13 +155,17 @@ unsafe extern "system" fn keybd_proc(code: c_int, w_param: WPARAM, l_param: LPAR
     // .unwrap() is ok because windows impl can actually never can fail
     //DEVICE.send(&mut input_event).unwrap()
     //KEY_MAPPER.send_event(&mut input_event, &DEVICE).unwrap()
-    KEY_MAPPER.lock().unwrap().send_event(&mut input_event, &DEVICE).unwrap()
+    KEY_MAPPER
+        .lock()
+        .unwrap()
+        .send_event(&mut input_event, &DEVICE)
+        .unwrap()
 }
 
 fn set_hook(
     hook_id: i32,
     hook_ptr: &AtomicPtr<HHOOK__>,
-    hook_proc: unsafe extern "system" fn (c_int, WPARAM, LPARAM) -> LRESULT,
+    hook_proc: unsafe extern "system" fn(c_int, WPARAM, LPARAM) -> LRESULT,
 ) {
     hook_ptr.store(
         unsafe { SetWindowsHookExW(hook_id, Some(hook_proc), 0 as HINSTANCE, 0) },
@@ -172,7 +189,6 @@ fn send_keybd_input(flags: u32, key_code: USizeableDWORD) {
     unsafe { SendInput(1, &mut input as LPINPUT, size_of::<INPUT>() as c_int) };
 }
 
-
 pub fn main_res() -> Result<()> {
     // this is just to cause the lazy_static init to run first, so if -h or -v is wanted, we do that
     // and exit immediately... todo: how to avoid mutex/lazy_static entirely???
@@ -188,25 +204,27 @@ pub fn main_res() -> Result<()> {
         // hide window
         // todo: probably should be tray icon someplace in future to quit, and error messages as windows popups etc...
         let hwnd = GetConsoleWindow();
-        ShowWindow( hwnd, SW_HIDE );
+        ShowWindow(hwnd, SW_HIDE);
     }
-    
+
     let mut msg: MSG = unsafe { zeroed() };
     unsafe { GetMessageW(&mut msg, 0 as HWND, 0, 0) };
-    
+
     //std::thread::sleep(std::time::Duration::from_millis(400000));
-    
+
     Ok(())
 }
 
 #[derive(Debug)]
 struct Config {
-    config_file: String
+    config_file: String,
 }
 
 impl Config {
     fn new(config_file: String) -> Self {
-        Config { config_file: config_file }
+        Config {
+            config_file: config_file,
+        }
     }
 }
 
@@ -227,14 +245,17 @@ fn parse_args() -> Config {
     }
 
     let args: Vec<_> = env::args().collect();
-    
+
     let mut default_configs = Vec::new();
     get_env_push("USERPROFILE", "\\keymap.toml", &mut default_configs);
     get_env_push("APPDATA", "\\keymap.toml", &mut default_configs);
-    
+
     default_configs.push("keymap.toml".to_string());
-    
-    let c_msg = format!("specify the keymap config file to use (default in order: {:?})", default_configs);
+
+    let c_msg = format!(
+        "specify the keymap config file to use (default in order: {:?})",
+        default_configs
+    );
 
     let mut opts = Options::new();
     opts.optflag("h", "help", "prints this help message");

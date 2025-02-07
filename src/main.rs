@@ -1,4 +1,3 @@
-
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn main() {
     let ret = rusty_keys::main_res();

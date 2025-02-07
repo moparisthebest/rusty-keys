@@ -1,7 +1,4 @@
-
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::convert::TryFrom;
+use std::{collections::HashMap, convert::TryFrom, hash::Hash};
 
 #[cfg(feature = "toml_serde")]
 use std::path::Path;
@@ -23,17 +20,17 @@ pub enum KeyState {
 }
 
 pub trait KeyEvent<T>
-    where
-        T: Into<usize>,
+where
+    T: Into<usize>,
 {
     fn code(&self) -> T;
     fn value(&self) -> KeyState;
 }
 
 pub trait Keyboard<T, E, R = ()>
-    where
-        T: Into<usize> + Copy,
-        E: KeyEvent<T>,
+where
+    T: Into<usize> + Copy,
+    E: KeyEvent<T>,
 {
     fn send(&self, event: &mut E) -> Result<R>;
     fn send_mod_code(&self, code: T, event: &mut E) -> Result<R>;
@@ -44,7 +41,14 @@ pub trait Keyboard<T, E, R = ()>
     fn caps_lock_code(&self) -> T;
     fn block_key(&self) -> Result<R>;
 
-    fn send_half_inverted_key(&self, half_inverted_key: &HalfInvertedKey<T>, event: &mut E, left_shift: bool, right_shift: bool, caps_lock: bool) -> Result<R> {
+    fn send_half_inverted_key(
+        &self,
+        half_inverted_key: &HalfInvertedKey<T>,
+        event: &mut E,
+        left_shift: bool,
+        right_shift: bool,
+        caps_lock: bool,
+    ) -> Result<R> {
         let value = event.value();
         let mut invert_shift = half_inverted_key.invert_shift;
         if value == KeyState::DOWN {
@@ -87,19 +91,19 @@ pub trait Keyboard<T, E, R = ()>
 }
 
 pub trait KeyMapper<K, T, E, R>
-    where
-        T: Into<usize> + Copy,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
+where
+    T: Into<usize> + Copy,
+    E: KeyEvent<T>,
+    K: Keyboard<T, E, R>,
 {
     fn send_event(&self, key_state: &[bool], event: &mut E, device: &K) -> Result<R>;
 }
 
 pub struct KeyMaps<K, T, E, R = ()>
-    where
-        T: Into<usize> + Copy + Clone + Eq + Hash,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
+where
+    T: Into<usize> + Copy + Clone + Eq + Hash,
+    E: KeyEvent<T>,
+    K: Keyboard<T, E, R>,
 {
     keymaps: Vec<Box<dyn KeyMapper<K, T, E, R>>>,
     keymap_index_keys: HashMap<T, usize>,
@@ -113,17 +117,25 @@ pub struct KeyMaps<K, T, E, R = ()>
 }
 
 fn parse_key<T: Clone + Copy>(key_map: &HashMap<&'static str, T>, key: &str) -> T {
-    match key_map.get(key.trim_matches(|c: char| c.is_whitespace() || c == INVERT_KEY_FLAG || c == CAPS_MODIFY_KEY_FLAG)) {
+    match key_map.get(key.trim_matches(|c: char| {
+        c.is_whitespace() || c == INVERT_KEY_FLAG || c == CAPS_MODIFY_KEY_FLAG
+    })) {
         Some(key_code) => *key_code,
-        None => panic!("unknown key: {}", key.trim())
+        None => panic!("unknown key: {}", key.trim()),
     }
 }
 
-fn parse_keymap_numeric<T: Clone + Copy>(key_map: &HashMap<&'static str, T>, keymap: &str) -> Vec<T> {
+fn parse_keymap_numeric<T: Clone + Copy>(
+    key_map: &HashMap<&'static str, T>,
+    keymap: &str,
+) -> Vec<T> {
     keymap.split(",").map(|k| parse_key(key_map, k)).collect()
 }
 
-fn parse_key_half_inverted<T: Clone + Copy>(key_map: &HashMap<&'static str, T>, key: &str) -> HalfInvertedKey<T> {
+fn parse_key_half_inverted<T: Clone + Copy>(
+    key_map: &HashMap<&'static str, T>,
+    key: &str,
+) -> HalfInvertedKey<T> {
     HalfInvertedKey {
         code: parse_key(key_map, key),
         invert_shift: key.contains(INVERT_KEY_FLAG),
@@ -138,53 +150,70 @@ fn parse_keymap_u16<T: Clone + Copy>(key_map: &HashMap<&'static str, T>, keymap:
 
 // todo: how do I return an iterator here instead of .collect to Vec?
 fn parse_keymap<T: Copy>(key_map: &HashMap<&'static str, T>, keymap: &str) -> Vec<Key<T>> {
-    keymap.split(",").map(|k| {
-        let ret: Key<T> = if k.contains(HALF_KEY_SEPARATOR) {
-            let keys: Vec<&str> = k.split(HALF_KEY_SEPARATOR).collect();
-            if keys.len() != 2 {
-                panic!("split key can only have 2 keys, 1 :, has {} keys", keys.len());
-            }
-            let mut shift_half = parse_key_half_inverted(key_map, keys[1]);
-            shift_half.invert_shift = !shift_half.invert_shift;
-            Key::FullKey(parse_key_half_inverted(key_map, keys[0]), shift_half)
-        } else if k.contains(INVERT_KEY_FLAG) || k.contains(CAPS_MODIFY_KEY_FLAG) {
-            Key::HalfKey(parse_key_half_inverted(key_map, k))
-        } else {
-            Key::Direct(parse_key(key_map, k))
-        };
-        ret
-    }).collect()
+    keymap
+        .split(",")
+        .map(|k| {
+            let ret: Key<T> = if k.contains(HALF_KEY_SEPARATOR) {
+                let keys: Vec<&str> = k.split(HALF_KEY_SEPARATOR).collect();
+                if keys.len() != 2 {
+                    panic!(
+                        "split key can only have 2 keys, 1 :, has {} keys",
+                        keys.len()
+                    );
+                }
+                let mut shift_half = parse_key_half_inverted(key_map, keys[1]);
+                shift_half.invert_shift = !shift_half.invert_shift;
+                Key::FullKey(parse_key_half_inverted(key_map, keys[0]), shift_half)
+            } else if k.contains(INVERT_KEY_FLAG) || k.contains(CAPS_MODIFY_KEY_FLAG) {
+                Key::HalfKey(parse_key_half_inverted(key_map, k))
+            } else {
+                Key::Direct(parse_key(key_map, k))
+            };
+            ret
+        })
+        .collect()
 }
 
 impl<K, T, E, R> KeyMaps<K, T, E, R>
-    where
-        T: Into<usize> + TryFrom<usize> + Copy + Clone + Eq + Hash + Default + 'static,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
+where
+    T: Into<usize> + TryFrom<usize> + Copy + Clone + Eq + Hash + Default + 'static,
+    E: KeyEvent<T>,
+    K: Keyboard<T, E, R>,
 {
     #[cfg(feature = "toml_serde")]
-    pub fn from_cfg<P: AsRef<Path>>(key_map: &HashMap<&'static str, T>, path: P) -> KeyMaps<K, T, E, R> {
+    pub fn from_cfg<P: AsRef<Path>>(
+        key_map: &HashMap<&'static str, T>,
+        path: P,
+    ) -> KeyMaps<K, T, E, R> {
         let key_map_config = parse_cfg(path).expect("provided config cannot be found/parsed");
         KeyMaps::new(key_map, key_map_config)
     }
 
     pub fn new(key_map: &HashMap<&'static str, T>, config: KeymapConfig) -> KeyMaps<K, T, E, R> {
         if config.keymaps.len() < 2 {
-            panic!("must have at least 2 keymaps (original and mapped) but only have {},", config.keymaps.len());
+            panic!(
+                "must have at least 2 keymaps (original and mapped) but only have {},",
+                config.keymaps.len()
+            );
         }
-        if config.default_keymap_index >= config.keymaps.len() || config.revert_keymap_index >= config.keymaps.len() {
+        if config.default_keymap_index >= config.keymaps.len()
+            || config.revert_keymap_index >= config.keymaps.len()
+        {
             panic!("default_keymap_index ({}) and revert_keymap_index ({}) must be less than keymaps length ({}),", config.default_keymap_index, config.revert_keymap_index, config.keymaps.len());
         }
         let base_keymap = parse_keymap_numeric(key_map, &config.keymaps[0]);
         //println!("base_keymap      : {:?}", base_keymap);
-        let mut keymaps: Vec<Box<dyn KeyMapper<K, T, E, R>>> = vec!(Box::new(Key::Noop)); // todo: can we share the box?
+        let mut keymaps: Vec<Box<dyn KeyMapper<K, T, E, R>>> = vec![Box::new(Key::Noop)]; // todo: can we share the box?
         let mut keymap_index_keys: HashMap<T, usize> = HashMap::new();
         for (x, v) in config.keymaps.iter().enumerate() {
             keymap_index_keys.insert(*key_map.get(&*x.to_string()).unwrap(), x);
             if x == 0 {
                 continue;
             }
-            if v.contains(HALF_KEY_SEPARATOR) || v.contains(INVERT_KEY_FLAG) || v.contains(CAPS_MODIFY_KEY_FLAG) {
+            if v.contains(HALF_KEY_SEPARATOR)
+                || v.contains(INVERT_KEY_FLAG)
+                || v.contains(CAPS_MODIFY_KEY_FLAG)
+            {
                 // we need KeyMap, the complicated more memory taking one
                 let v = parse_keymap(key_map, v);
                 let mut keymap = KeyMap::new();
@@ -241,7 +270,11 @@ impl<K, T, E, R> KeyMaps<K, T, E, R>
         KeyMaps {
             keymaps: keymaps,
             keymap_index_keys: keymap_index_keys,
-            switch_layout_keys: config.switch_layout_keys.iter().map(|k| parse_key(key_map, k).into()).collect(),
+            switch_layout_keys: config
+                .switch_layout_keys
+                .iter()
+                .map(|k| parse_key(key_map, k).into())
+                .collect(),
             key_state: [false; KEY_MAX],
             // todo: detect key state? at least CAPSLOCK...
             revert_default_keys,
@@ -250,17 +283,18 @@ impl<K, T, E, R> KeyMaps<K, T, E, R>
             current_keymap_index: config.default_keymap_index,
         }
     }
-//}
+    //}
 
-//impl KeyMapper for KeyMaps {
-//impl KeyMaps {
-pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
-    let value = event.value();
-    if value != KeyState::OTHER {
+    //impl KeyMapper for KeyMaps {
+    //impl KeyMaps {
+    pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
+        let value = event.value();
+        if value != KeyState::OTHER {
             // todo: index check here...
-        if event.code() == device.caps_lock_code() {
-            if value == KeyState::DOWN {
-                self.key_state[device.caps_lock_code().into()] = !self.key_state[device.caps_lock_code().into()];
+            if event.code() == device.caps_lock_code() {
+                if value == KeyState::DOWN {
+                    self.key_state[device.caps_lock_code().into()] =
+                        !self.key_state[device.caps_lock_code().into()];
                 }
             } else {
                 let idx = event.code().into();
@@ -286,28 +320,35 @@ pub fn send_event(&mut self, mut event: &mut E, device: &K) -> Result<R> {
                     return device.block_key(); // we don't want to also send this keypress, so bail
                 }
             }
-        if self.revert_default_keys.contains(&event.code()) {
-            match value {
-                KeyState::DOWN => {
-                    // todo: should we release currently held keys and then press them back down here, kinda the opposite of below? not for now...
-                    self.current_keymap_index = self.revert_keymap_index
-                },
-                KeyState::UP => {
-                    self.current_keymap_index = self.chosen_keymap_index;
-                    #[cfg(not(target_os = "macos"))] {
-                    // need to release all currently held down keys, except this one, otherwise ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released
-                    let orig_code = event.code();
-                    for (idx, key_down) in self.key_state.iter_mut().enumerate() {
-                        if *key_down {
-                            device.send_mod_code_value(T::try_from(idx).unwrap_or_else(|_| panic!("cannot convert from usize to T ????")), true, event)?;
-                            *key_down = false;
+            if self.revert_default_keys.contains(&event.code()) {
+                match value {
+                    KeyState::DOWN => {
+                        // todo: should we release currently held keys and then press them back down here, kinda the opposite of below? not for now...
+                        self.current_keymap_index = self.revert_keymap_index
+                    }
+                    KeyState::UP => {
+                        self.current_keymap_index = self.chosen_keymap_index;
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            // need to release all currently held down keys, except this one, otherwise ctrl+c will get c stuck because code c value 1 will be sent, but then we'll let go of ctrl, and code j value 0 is sent, so c is never released
+                            let orig_code = event.code();
+                            for (idx, key_down) in self.key_state.iter_mut().enumerate() {
+                                if *key_down {
+                                    device.send_mod_code_value(
+                                        T::try_from(idx).unwrap_or_else(|_| {
+                                            panic!("cannot convert from usize to T ????")
+                                        }),
+                                        true,
+                                        event,
+                                    )?;
+                                    *key_down = false;
+                                }
+                            }
+                            // todo: seems like we should not send this here, and instead just set the original code back, and pass it through the keymaps?
+                            return device.send_mod_code_value(orig_code, true, event);
                         }
                     }
-                    // todo: seems like we should not send this here, and instead just set the original code back, and pass it through the keymaps?
-                    return device.send_mod_code_value(orig_code, true, event)
-                    }
-                },
-                    _ => () // do nothing for 2
+                    _ => (), // do nothing for 2
                 }
             }
         }
@@ -325,7 +366,7 @@ struct KeyMap<T: Into<usize> + Copy> {
 impl<T: Into<usize> + Copy> KeyMap<T> {
     pub fn new() -> Self {
         KeyMap {
-            keymap: [Key::Noop; KEY_MAX]
+            keymap: [Key::Noop; KEY_MAX],
         }
     }
 
@@ -335,10 +376,10 @@ impl<T: Into<usize> + Copy> KeyMap<T> {
 }
 
 impl<K, T, E, R> KeyMapper<K, T, E, R> for KeyMap<T>
-    where
-        T: Into<usize> + Copy,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
+where
+    T: Into<usize> + Copy,
+    E: KeyEvent<T>,
+    K: Keyboard<T, E, R>,
 {
     fn send_event(&self, key_state: &[bool], event: &mut E, device: &K) -> Result<R> {
         self.keymap[event.code().into()].send_event(key_state, event, device)
@@ -356,9 +397,7 @@ impl<T: Into<usize> + TryFrom<usize> + Copy + Default> CodeKeyMap<T> {
             *v = T::try_from(x).unwrap_or_else(|_| panic!("cannot convert from usize to T ????"));
         }
         //println!("keymap: {:?}", &keymap[..]);
-        CodeKeyMap {
-            keymap
-        }
+        CodeKeyMap { keymap }
     }
 
     pub fn map(&mut self, from: T, to: T) {
@@ -367,10 +406,10 @@ impl<T: Into<usize> + TryFrom<usize> + Copy + Default> CodeKeyMap<T> {
 }
 
 impl<K, T, E, R> KeyMapper<K, T, E, R> for CodeKeyMap<T>
-    where
-        T: Into<usize> + TryFrom<usize> + Copy + Default,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
+where
+    T: Into<usize> + TryFrom<usize> + Copy + Default,
+    E: KeyEvent<T>,
+    K: Keyboard<T, E, R>,
 {
     fn send_event(&self, _key_state: &[bool], event: &mut E, device: &K) -> Result<R> {
         device.send_mod_code(self.keymap[event.code().into()], event)
@@ -390,10 +429,10 @@ pub struct HalfInvertedKey<T: Clone + Copy> {
 }
 
 impl<K, T, E, R> KeyMapper<K, T, E, R> for HalfInvertedKey<T>
-    where
-        T: Into<usize> + Clone + Copy,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
+where
+    T: Into<usize> + Clone + Copy,
+    E: KeyEvent<T>,
+    K: Keyboard<T, E, R>,
 {
     fn send_event(&self, key_state: &[bool], event: &mut E, device: &K) -> Result<R> {
         let left_shift = key_state[device.left_shift_code().into()];
@@ -405,8 +444,8 @@ impl<K, T, E, R> KeyMapper<K, T, E, R> for HalfInvertedKey<T>
 
 #[derive(Clone, Copy)]
 enum Key<T>
-    where
-        T: Copy + Clone
+where
+    T: Copy + Clone,
 {
     Noop,
     Direct(T),
@@ -415,32 +454,38 @@ enum Key<T>
 }
 
 impl<K, T, E, R> KeyMapper<K, T, E, R> for Key<T>
-    where
-        T: Into<usize> + Copy,
-        E: KeyEvent<T>,
-        K: Keyboard<T, E, R>,
+where
+    T: Into<usize> + Copy,
+    E: KeyEvent<T>,
+    K: Keyboard<T, E, R>,
 {
     fn send_event(&self, key_state: &[bool], event: &mut E, device: &K) -> Result<R> {
         match *self {
-            Key::Noop => {
-                device.send(event)
-            },
-            Key::Direct(code) => {
-                device.send_mod_code(code, event)
-            },
-            Key::HalfKey(ref key_half) => {
-                key_half.send_event(key_state, event, device)
-            },
+            Key::Noop => device.send(event),
+            Key::Direct(code) => device.send_mod_code(code, event),
+            Key::HalfKey(ref key_half) => key_half.send_event(key_state, event, device),
             Key::FullKey(ref noshift_half, ref shift_half) => {
                 let left_shift = key_state[device.left_shift_code().into()];
                 let right_shift = key_state[device.right_shift_code().into()];
                 let caps_lock = key_state[device.caps_lock_code().into()];
                 if caps_lock != (left_shift || right_shift) {
-                    device.send_half_inverted_key(shift_half, event, left_shift, right_shift, caps_lock)
+                    device.send_half_inverted_key(
+                        shift_half,
+                        event,
+                        left_shift,
+                        right_shift,
+                        caps_lock,
+                    )
                 } else {
-                    device.send_half_inverted_key(noshift_half, event, left_shift, right_shift, caps_lock)
+                    device.send_half_inverted_key(
+                        noshift_half,
+                        event,
+                        left_shift,
+                        right_shift,
+                        caps_lock,
+                    )
                 }
-            },
+            }
         }
     }
 }
@@ -453,7 +498,7 @@ pub struct KeymapConfig {
     revert_default_keys: Option<Vec<String>>,
     revert_keymap_index: usize,
     default_keymap_index: usize,
-    keymaps: Vec<String>
+    keymaps: Vec<String>,
 }
 
 #[cfg(feature = "toml_serde")]
@@ -473,7 +518,7 @@ pub struct KeymapConfig {
     revert_default_keys: Option<Vec<&'static str>>,
     revert_keymap_index: usize,
     default_keymap_index: usize,
-    keymaps: Vec<&'static str>
+    keymaps: Vec<&'static str>,
 }
 
 #[cfg(not(feature = "toml_serde"))]
@@ -528,4 +573,3 @@ impl Default for KeymapConfig {
         }
     }
 }
-

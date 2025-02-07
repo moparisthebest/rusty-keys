@@ -1,6 +1,5 @@
-
-use std::collections::HashMap;
 use core_graphics::event::CGKeyCode;
+use std::collections::HashMap;
 
 pub const KEY_RESERVED: CGKeyCode = 0x31;
 pub const KEY_ESC: CGKeyCode = 0x00;
@@ -564,5 +563,9 @@ pub fn key_map() -> HashMap<&'static str, CGKeyCode> {
         ("P0", KEY_KP0),
         ("PDOT", KEY_KPDOT),
         ("PENT", KEY_KPENTER),
-    ].iter().cloned().map(|(m, v)| (m, v)).collect()
+    ]
+    .iter()
+    .cloned()
+    .map(|(m, v)| (m, v))
+    .collect()
 }

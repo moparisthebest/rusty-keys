@@ -1,6 +1,5 @@
+use std::{collections::HashMap, convert::TryFrom};
 use winapi::shared::minwindef::DWORD;
-use std::collections::HashMap;
-use std::convert::TryFrom;
 
 // https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
@@ -557,7 +556,11 @@ pub fn key_map() -> HashMap<&'static str, USizeableDWORD> {
         ("P0", KEY_KP0),
         ("PDOT", KEY_KPDOT),
         ("PENT", KEY_KPENTER),
-    ].iter().cloned().map(|(m, v)| (m, USizeableDWORD(v))).collect()
+    ]
+    .iter()
+    .cloned()
+    .map(|(m, v)| (m, USizeableDWORD(v)))
+    .collect()
 }
 
 // https://www.reddit.com/r/rust/comments/9xth8g/why_no_from_conversion_from_u32_to_usize/

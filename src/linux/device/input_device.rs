@@ -1,15 +1,14 @@
-use std::mem;
-use std::fs::File;
-use std::io::Read;
-use std::os::unix::io::AsRawFd;
-use libc::{input_event, c_int};
-use nix::{ioctl_write_ptr, ioctl_read_buf};
+use libc::{c_int, input_event};
+use nix::{ioctl_read_buf, ioctl_write_ptr};
+use std::{fs::File, io::Read, mem, os::unix::io::AsRawFd};
 
 #[cfg(feature = "epoll_inotify")]
 use std::os::unix::prelude::RawFd;
 
-use crate::{Error,Result};
-use crate::linux::{EV_KEY, KEY_MAX, NAME, KEY_W, KEY_A, KEY_S, KEY_D, BTN_LEFT};
+use crate::{
+    linux::{BTN_LEFT, EV_KEY, KEY_A, KEY_D, KEY_MAX, KEY_S, KEY_W, NAME},
+    Error, Result,
+};
 
 ioctl_write_ptr!(eviocgrab, b'E', 0x90, c_int);
 ioctl_read_buf!(eviocgname, b'E', 0x06, u8);
@@ -34,7 +33,7 @@ impl InputDevice {
             epoll_fd: None,
         })
     }
-    
+
     pub fn new_input_event_buf() -> [u8; SIZE_OF_INPUT_EVENT] {
         [0u8; SIZE_OF_INPUT_EVENT]
     }
@@ -55,7 +54,7 @@ impl InputDevice {
         if !self.device_file.metadata()?.file_type().is_char_device() {
             return Err(Error::NotAKeyboard);
         }
-        
+
         let raw_fd = self.device_file.as_raw_fd();
 
         // does it support EV_KEY
@@ -73,16 +72,19 @@ impl InputDevice {
         unsafe {
             eviocgbit_ev_key(raw_fd, &mut key_bits)?;
         };
-        let key_unsupported = |key : c_int| (key_bits[key as usize / 8] & (1 << (key % 8))) == 0;
-        if key_unsupported(KEY_W) || key_unsupported(KEY_A) || key_unsupported(KEY_S) || key_unsupported(KEY_D) || !key_unsupported(BTN_LEFT) {
+        let key_unsupported = |key: c_int| (key_bits[key as usize / 8] & (1 << (key % 8))) == 0;
+        if key_unsupported(KEY_W)
+            || key_unsupported(KEY_A)
+            || key_unsupported(KEY_S)
+            || key_unsupported(KEY_D)
+            || !key_unsupported(BTN_LEFT)
+        {
             return Err(Error::NotAKeyboard);
         }
 
         // is it another running copy of rusty-keys ?
         let mut name = [0u8; NAME.len()];
-        unsafe {
-            eviocgname(raw_fd, &mut name)?
-        };
+        unsafe { eviocgname(raw_fd, &mut name)? };
         // exclude anything starting with "Yubico" also
         if NAME.as_bytes() == &name || "Yubico".as_bytes() == &name[0..6] {
             return Err(Error::NotAKeyboard);
@@ -107,10 +109,10 @@ impl InputDevice {
         }
         Ok(())
     }
-    
+
     #[cfg(feature = "epoll_inotify")]
     pub fn epoll_add(mut self, epoll_fd: RawFd, data: u64) -> Result<Self> {
-        use nix::fcntl::{OFlag, fcntl, FcntlArg};
+        use nix::fcntl::{fcntl, FcntlArg, OFlag};
 
         if None != self.epoll_fd {
             return Err(Error::EpollAlreadyAdded);
@@ -123,7 +125,12 @@ impl InputDevice {
         fcntl(raw_fd, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
 
         let epoll_event = epoll::Event::new(epoll::Events::EPOLLIN | epoll::Events::EPOLLET, data);
-        epoll::ctl(epoll_fd, epoll::ControlOptions::EPOLL_CTL_ADD, raw_fd, epoll_event)?;
+        epoll::ctl(
+            epoll_fd,
+            epoll::ControlOptions::EPOLL_CTL_ADD,
+            raw_fd,
+            epoll_event,
+        )?;
         self.epoll_fd = Some(epoll_fd);
         Ok(self)
     }
@@ -134,7 +141,12 @@ impl InputDevice {
             // set this to None first, if we end up returning an Err early, we can't do anything else anyway...
             self.epoll_fd = None;
             let empty_event = epoll::Event::new(epoll::Events::empty(), 0);
-            epoll::ctl(epoll_fd, epoll::ControlOptions::EPOLL_CTL_DEL, self.device_file.as_raw_fd(), empty_event)?;
+            epoll::ctl(
+                epoll_fd,
+                epoll::ControlOptions::EPOLL_CTL_DEL,
+                self.device_file.as_raw_fd(),
+                empty_event,
+            )?;
         }
         Ok(self)
     }
