@@ -45,3 +45,24 @@ keymaps = [
     LCTL,     LGUI,  LALT,                     SPC,                             RALT,   RGUI,  APP,    RCTL,        LEFT,DOWN,RGHT,    *P0:*BSLS,         *PDOT:*SCLN, PENT
     """,
     ]
+
+# these are optional configs to support automatically grabbing only specific devices, or skipping specific devices
+# the logic is that empty grab means everything, and empty skip means skip nothing, but otherise any grab has to match and no skip can match, or the device is skipped, a log message is printed when a new device is grabbed or skipped
+# on linux you can get vendor/product with `lsusb`, but they are hex, so preceed with 0x
+
+# the default is to skip vendor 0x1050 which is Yubico, if you modify these, you may want to include this too
+# [[devices.skip]]
+# vendor = 0x1050
+
+# example that will grab only this
+# [[devices.grab]]
+# vendor = 0x5a69
+# product = 0xe200
+# bustype = 1
+# version = 1
+
+# ergosnm, a custom QMK board
+# [[devices.skip]]
+# vendor = 0x5a69
+# product = 0xe200
+

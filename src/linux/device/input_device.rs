@@ -1,5 +1,5 @@
-use libc::{c_int, input_event};
-use nix::{ioctl_read_buf, ioctl_write_ptr};
+use libc::{c_int, input_event, input_id};
+use nix::{ioctl_read, ioctl_read_buf, ioctl_write_ptr};
 use std::{fs::File, io::Read, mem, os::unix::io::AsRawFd};
 
 #[cfg(feature = "epoll_inotify")]
@@ -7,13 +7,14 @@ use std::os::unix::prelude::RawFd;
 
 use crate::{
     linux::{BTN_LEFT, EV_KEY, KEY_A, KEY_D, KEY_MAX, KEY_S, KEY_W, NAME},
-    Error, Result,
+    DeviceIds, DeviceMatchers, Error, Result,
 };
 
 ioctl_write_ptr!(eviocgrab, b'E', 0x90, c_int);
 ioctl_read_buf!(eviocgname, b'E', 0x06, u8);
 ioctl_read_buf!(eviocgbit, b'E', 0x20, u8);
 ioctl_read_buf!(eviocgbit_ev_key, b'E', 0x20 + EV_KEY, u8);
+ioctl_read!(eviocgid, b'E', 0x02, input_id);
 
 const SIZE_OF_INPUT_EVENT: usize = mem::size_of::<input_event>();
 
@@ -47,7 +48,7 @@ impl InputDevice {
         Ok(event)
     }
 
-    pub fn valid_keyboard_device(self) -> Result<Self> {
+    pub fn valid_keyboard_device(self, devices: &DeviceMatchers) -> Result<Self> {
         use std::os::unix::fs::FileTypeExt;
 
         // must be a character device
@@ -85,11 +86,28 @@ impl InputDevice {
         // is it another running copy of rusty-keys ?
         let mut name = [0u8; NAME.len()];
         unsafe { eviocgname(raw_fd, &mut name)? };
-        // exclude anything starting with "Yubico" also
-        if NAME.as_bytes() == &name || "Yubico".as_bytes() == &name[0..6] {
+        if NAME.as_bytes() == &name {
             return Err(Error::NotAKeyboard);
         }
-        return Ok(self);
+
+        let mut id = input_id {
+            bustype: 0,
+            vendor: 0,
+            product: 0,
+            version: 0,
+        };
+        unsafe { eviocgid(raw_fd, &mut id)? };
+        print!(
+            "vendor: 0x{:x} product: 0x{:x}, bustype: 0x{:x}, version: 0x{:x}: ",
+            id.vendor, id.product, id.bustype, id.version
+        );
+        if devices.grab(&id) {
+            println!("skipped");
+            Err(Error::NotAKeyboard)
+        } else {
+            println!("grabbed");
+            Ok(self)
+        }
     }
 
     pub fn grab(mut self) -> Result<Self> {
@@ -158,5 +176,23 @@ impl Drop for InputDevice {
         self.release().ok();
         #[cfg(feature = "epoll_inotify")]
         self.epoll_del().ok();
+    }
+}
+
+impl DeviceIds for input_id {
+    fn bustype(&self) -> Option<u16> {
+        Some(self.bustype)
+    }
+
+    fn vendor(&self) -> Option<u16> {
+        Some(self.vendor)
+    }
+
+    fn product(&self) -> Option<u16> {
+        Some(self.product)
+    }
+
+    fn version(&self) -> Option<u16> {
+        Some(self.version)
     }
 }

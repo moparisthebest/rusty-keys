@@ -111,6 +111,7 @@ where
     key_state: [bool; KEY_MAX],
     revert_default_keys: Vec<T>,
     revert_keymap_index: usize,
+    pub devices: DeviceMatchers,
     // above do not change, below does
     chosen_keymap_index: usize,
     current_keymap_index: usize,
@@ -281,6 +282,7 @@ where
             revert_keymap_index: config.revert_keymap_index,
             chosen_keymap_index: config.default_keymap_index,
             current_keymap_index: config.default_keymap_index,
+            devices: config.devices,
         }
     }
     //}
@@ -490,8 +492,78 @@ where
     }
 }
 
+pub trait DeviceIds {
+    fn bustype(&self) -> Option<u16>;
+    fn vendor(&self) -> Option<u16>;
+    fn product(&self) -> Option<u16>;
+    fn version(&self) -> Option<u16>;
+}
+
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "toml_serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "toml_serde", serde(deny_unknown_fields))]
+pub struct DeviceMatcher {
+    pub bustype: Option<u16>,
+    pub vendor: Option<u16>,
+    pub product: Option<u16>,
+    pub version: Option<u16>,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "toml_serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "toml_serde", serde(deny_unknown_fields))]
+pub struct DeviceMatchers {
+    #[cfg_attr(feature = "toml_serde", serde(default))]
+    grab: Vec<DeviceMatcher>,
+    #[cfg_attr(feature = "toml_serde", serde(default = "default_skip"))]
+    skip: Vec<DeviceMatcher>,
+}
+
+impl Default for DeviceMatchers {
+    fn default() -> Self {
+        Self {
+            grab: Default::default(),
+            skip: default_skip(),
+        }
+    }
+}
+
+pub fn default_skip() -> Vec<DeviceMatcher> {
+    vec![
+        // 0x1050 is Yubico
+        DeviceMatcher {
+            vendor: Some(0x1050),
+            ..Default::default()
+        },
+    ]
+}
+
+#[inline]
+fn um(rule: Option<u16>, data: Option<u16>) -> bool {
+    rule.is_none() || rule == data
+}
+
+impl DeviceMatcher {
+    pub fn matches(&self, device: &dyn DeviceIds) -> bool {
+        um(self.bustype, device.bustype())
+            && um(self.vendor, device.vendor())
+            && um(self.product, device.product())
+            && um(self.version, device.version())
+    }
+}
+
+impl DeviceMatchers {
+    pub fn grab(&self, device: &dyn DeviceIds) -> bool {
+        // we should grab this device if grab is empty or any single entry matches
+        (self.grab.is_empty() || self.grab.iter().any(|d| d.matches(device)))
+            // and skip is empty or no skip entry matches
+            && (self.skip.is_empty() || !self.skip.iter().any(|d| d.matches(device)))
+    }
+}
+
 #[cfg(feature = "toml_serde")]
 #[derive(serde::Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct KeymapConfig {
     switch_layout_keys: Vec<String>,
     revert_default_key: Option<String>,
@@ -499,6 +571,8 @@ pub struct KeymapConfig {
     revert_keymap_index: usize,
     default_keymap_index: usize,
     keymaps: Vec<String>,
+    #[serde(default)]
+    devices: DeviceMatchers,
 }
 
 #[cfg(feature = "toml_serde")]
@@ -519,6 +593,7 @@ pub struct KeymapConfig {
     revert_keymap_index: usize,
     default_keymap_index: usize,
     keymaps: Vec<&'static str>,
+    devices: DeviceMatchers,
 }
 
 #[cfg(not(feature = "toml_serde"))]
@@ -570,6 +645,66 @@ impl Default for KeymapConfig {
                 "###,
             ],
             revert_default_key: None, // use revert_default_keys instead
+            devices: Default::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use libc::input_id;
+
+    use super::*;
+
+    #[test]
+    fn test_device_matchers() {
+        // test default
+        let devices: DeviceMatchers = toml::from_str("").unwrap();
+        assert!(devices.grab.is_empty());
+        assert_eq!(devices.skip.len(), 1);
+        let yubi = input_id {
+            vendor: 0x1050,
+            product: 0x0406,
+            bustype: 0,
+            version: 0,
+        };
+        let yubi2 = input_id {
+            vendor: 0x1050,
+            product: 0x0407,
+            bustype: 0,
+            version: 0,
+        };
+        let ergosnm = input_id {
+            vendor: 0x5a69,
+            product: 0xe200,
+            bustype: 0,
+            version: 0,
+        };
+        let rando = input_id {
+            vendor: 1,
+            product: 2,
+            bustype: 3,
+            version: 4,
+        };
+        assert!(!devices.grab(&yubi));
+        assert!(!devices.grab(&yubi2));
+        assert!(devices.grab(&ergosnm));
+        assert!(devices.grab(&rando));
+        let devices: DeviceMatchers = toml::from_str(
+            r###"
+            # yubikey
+            [[skip]]
+            vendor = 0x1050
+            # ergosnm
+            [[skip]]
+            vendor = 0x5a69
+            product = 0xe200
+            "###,
+        )
+        .unwrap();
+        assert!(!devices.grab(&yubi));
+        assert!(!devices.grab(&yubi2));
+        assert!(!devices.grab(&ergosnm));
+        assert!(devices.grab(&rando));
     }
 }

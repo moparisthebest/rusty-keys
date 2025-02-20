@@ -159,7 +159,7 @@ pub fn main_res() -> Result<()> {
                 // there is a slight race condition here, if a keyboard is plugged in between the time we
                 // enumerate the devices and set up the inotify watch, we'll miss it, doing it the other way
                 // can bring duplicates though, todo: think about this...
-                let device_files = get_keyboard_devices();
+                let device_files = get_keyboard_devices(&key_map.devices);
                 let mut inotify = Inotify::init()?;
                 inotify.add_watch(INPUT_FOLDER, WatchMask::CREATE)?;
                 let epoll_event = epoll::Event::new(
@@ -226,7 +226,7 @@ pub fn main_res() -> Result<()> {
                                     path.push(device_file);
 
                                     if let Ok(input_device) = InputDevice::open(path)
-                                        .and_then(|id| id.valid_keyboard_device())
+                                        .and_then(|id| id.valid_keyboard_device(&key_map.devices))
                                     {
                                         println!(
                                             "starting mapping for new keyboard: {}",
@@ -313,13 +313,13 @@ fn parse_args() -> Config {
 }
 
 #[cfg(feature = "epoll_inotify")]
-fn get_keyboard_devices() -> Vec<InputDevice> {
+fn get_keyboard_devices(devices: &crate::DeviceMatchers) -> Vec<InputDevice> {
     let mut res = Vec::new();
     if let Ok(entries) = std::fs::read_dir(INPUT_FOLDER) {
         for entry in entries {
             if let Ok(entry) = entry {
                 if let Ok(input_device) =
-                    InputDevice::open(entry.path()).and_then(|id| id.valid_keyboard_device())
+                    InputDevice::open(entry.path()).and_then(|id| id.valid_keyboard_device(devices))
                 {
                     res.push(input_device);
                 }
